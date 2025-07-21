@@ -8,5 +8,5 @@ wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/add_
 wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/change_ssh.sh && chmod +x change_ssh.sh && ./change_ssh.sh
 ```
 ```
-wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/install_nginx.sh && chmod +x install_nginx.sh && ./install_nginx.sh
+wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/install_nginx.sh && chmod +x nginx.sh && ./nginx.sh
 ```
