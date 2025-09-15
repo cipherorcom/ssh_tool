@@ -22,6 +22,6 @@ wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/ngin
 ```
 wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/frps.sh && chmod +x frps.sh && ./frps.sh
 ```
-<img width="480" height="173" alt="image" src="https://github.com/user-attachments/assets/fefdf81d-9837-4b8b-a810-96919cae916c" />
+<img width="353" height="177" alt="image" src="https://github.com/user-attachments/assets/3c05e10e-d53f-4eec-823b-861e8a614e13" />
 
 <img width="259" height="199" alt="image" src="https://github.com/user-attachments/assets/1e1404ac-d549-4187-a9da-04b291b075f7" />
