@@ -5,7 +5,7 @@
 #
 # @author   Gemini
 # @date     2025-09-15
-# @version  2.1 (Lite)
+# @version  1.0 (Lite)
 #
 # 功能:
 #   - [安装] 交互式引导完成 frps 的安装与配置 (已移除vhost配置)
@@ -236,34 +236,34 @@ show_manage_menu() {
 show_main_menu() {
     clear
     echo -e "${GREEN}==========================================${NC}"
-    echo -e "${GREEN}      frps 多功能管理脚本 v2.1 (精简版)   ${NC}"
+    echo -e "${GREEN}      frps 多功能管理脚本 v1.0 (精简版)   ${NC}"
     echo -e "${GREEN}==========================================${NC}"
     
     if check_if_installed; then
         echo " frps 已安装。"
         echo "------------------------------------------"
-        echo " 1. ${BLUE}管理 frps 服务${NC} (启动/停止/查看配置等)"
-        echo " 2. ${RED}卸载 frps${NC}"
-        echo " 0. ${YELLOW}退出脚本${NC}"
+        echo " 1. 管理 frps 服务 (启动/停止/查看配置等)"
+        echo " 2. 卸载 frps"
+        echo " 0. 退出脚本"
         echo "------------------------------------------"
         read -p "请输入选项 [0-2]: " choice
         case $choice in
             1) show_manage_menu ;;
             2) do_uninstall ;;
             0) exit 0 ;;
-            *) echo -e "${RED}无效选项!${NC}"; sleep 1 ;;
+            *) echo -e "无效选项!"; sleep 1 ;;
         esac
     else
         echo " frps 未安装。"
         echo "------------------------------------------"
-        echo " 1. ${GREEN}安装 frps${NC}"
-        echo " 0. ${YELLOW}退出脚本${NC}"
+        echo " 1. 安装 frps"
+        echo " 0. 退出脚本"
         echo "------------------------------------------"
         read -p "请输入选项 [0-1]: " choice
         case $choice in
             1) do_install ;;
             0) exit 0 ;;
-            *) echo -e "${RED}无效选项!${NC}"; sleep 1 ;;
+            *) echo -e "无效选项!"; sleep 1 ;;
         esac
     fi
 }
