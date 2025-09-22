@@ -2,8 +2,9 @@
 # =========================================================================
 # Script Name: Nginx Installation and Management Tool
 # Description: Installs Nginx and manages website/proxy configs with SSL.
-# Author(s):   cipherorcom (base) + Gemini AI (features) + Revised for AlmaLinux by ChatGPT
-# Version:     3.1
+# Author(s):   cipherorcom (base) + Gemini AI (features)
+#              Revised for AlmaLinux/CentOS/RHEL/Debian/Ubuntu by ChatGPT
+# Version:     3.1.1
 # =========================================================================
 
 set -euo pipefail
@@ -22,12 +23,13 @@ SSL_DIR="/etc/nginx/ssl"
 NGINX_USER="www-data"   # Debian/Ubuntu default
 PKG_MGR=""
 IS_RHEL=false           # AlmaLinux/CentOS/RHEL family
-CONF_EXT=""             # ".conf" for RHEL's conf.d, "" for Debian's sites-available
+CONF_EXT=""             # ".conf" on RHEL's conf.d, "" on Debian's sites-available
 OPENSSL_PKG="openssl"
 
 CERT_PATH=""
 KEY_PATH=""
 
+# --- Helpers ---
 check_root() {
   if [ "$(id -u)" -ne 0 ]; then
     echo -e "${RED}错误：此脚本必须以 root 权限运行。请使用 sudo。${NC}"
@@ -48,9 +50,9 @@ detect_os() {
       SITES_AVAILABLE="/etc/nginx/sites-available"
       SITES_ENABLED="/etc/nginx/sites-enabled"
       SSL_DIR="/etc/nginx/ssl"
-      CONF_EXT="" # we’ll keep Debian’s sites-* layout
+      CONF_EXT=""
+      OPENSSL_PKG="openssl"
     elif [[ "$ID_LOWER" =~ (almalinux|centos|rhel|rocky) || "$ID_LIKE_LOWER" =~ (rhel|fedora|centos) ]]; then
-      # Prefer dnf if available; fall back to yum
       if command -v dnf >/dev/null 2>&1; then
         PKG_MGR="dnf"
       else
@@ -58,12 +60,11 @@ detect_os() {
       fi
       IS_RHEL=true
       NGINX_USER="nginx"
-      # RHEL-family uses conf.d/*.conf rather than sites-available/enabled
       SITES_AVAILABLE="/etc/nginx/conf.d"
       SITES_ENABLED="/etc/nginx/conf.d"
       SSL_DIR="/etc/pki/nginx"
       CONF_EXT=".conf"
-      OPENSSL_PKG="openssl" # same name but installed via dnf/yum
+      OPENSSL_PKG="openssl"
     else
       echo -e "${RED}错误：未识别的发行版（仅支持 Debian/Ubuntu 与 AlmaLinux/CentOS/RHEL）。${NC}"
       exit 1
@@ -71,22 +72,6 @@ detect_os() {
   else
     echo -e "${RED}错误：无法检测系统 (缺少 /etc/os-release)。${NC}"
     exit 1
-  fi
-}
-
-ensure_layout() {
-  if $IS_RHEL; then
-    mkdir -p "$SITES_AVAILABLE"
-    # RHEL 默认 /etc/nginx/nginx.conf 已包含 include /etc/nginx/conf.d/*.conf;
-    # 无需创建 sites-enabled 或软链。
-    mkdir -p "$SSL_DIR"
-  else
-    # Debian/Ubuntu: ensure sites-available/enabled and include line
-    mkdir -p "$SITES_AVAILABLE" "$SITES_ENABLED" "$SSL_DIR"
-    # 确保 nginx.conf 包含 sites-enabled/*.conf
-    if ! grep -q 'include /etc/nginx/sites-enabled/\*' /etc/nginx/nginx.conf; then
-      sed -i '/http *{/a \    include /etc/nginx/sites-enabled/*;' /etc/nginx/nginx.conf
-    fi
   fi
 }
 
@@ -109,6 +94,26 @@ install_pkgs() {
   esac
 }
 
+ensure_layout() {
+  # 在需要的位置创建目录，并仅在 nginx.conf 存在时修改 include
+  if $IS_RHEL; then
+    mkdir -p "$SITES_AVAILABLE" "$SSL_DIR"
+    # RHEL: /etc/nginx/nginx.conf 默认 include conf.d/*.conf; 无需修改
+  else
+    mkdir -p "$SITES_AVAILABLE" "$SITES_ENABLED" "$SSL_DIR"
+    local conf="/etc/nginx/nginx.conf"
+    if [ -f "$conf" ]; then
+      # 如果尚未包含 sites-enabled，则插入一行
+      if ! grep -qE 'include[[:space:]]+/etc/nginx/sites-enabled/\*' "$conf"; then
+        # 在 http { 后插入 include 行（避免重复）
+        sed -i '/http[[:space:]]*{/a \    include /etc/nginx/sites-enabled/*;' "$conf"
+      fi
+    else
+      echo -e "${YELLOW}提示：未找到 $conf，将在安装 Nginx 后再处理站点布局。${NC}"
+    fi
+  fi
+}
+
 start_enable_nginx() {
   systemctl enable --now nginx
 }
@@ -129,13 +134,10 @@ selinux_allow_proxy_and_contexts() {
   # 仅在 RHEL/AlmaLinux 且 SELinux 开启时处理
   if $IS_RHEL && command -v getenforce >/dev/null 2>&1; then
     if [[ "$(getenforce)" != "Disabled" ]]; then
-      # 允许 Nginx 作为反向代理连接外部网络
       if command -v setsebool >/dev/null 2>&1; then
         setsebool -P httpd_can_network_connect 1 || true
       fi
-      # 为站点根目录和证书目录设置合适上下文
       if command -v semanage >/dev/null 2>&1; then
-        # 证书与配置
         semanage fcontext -a -t httpd_config_t "$SITES_AVAILABLE(/.*)?" 2>/dev/null || true
         semanage fcontext -a -t cert_t "$SSL_DIR(/.*)?" 2>/dev/null || true
       fi
@@ -172,7 +174,6 @@ ssl_from_paste() {
   chmod 600 "$KEY_PATH"
   chown root:root "$KEY_PATH" "$CERT_PATH" || true
 
-  # SELinux 上下文修复（如适用）
   if $IS_RHEL && command -v getenforce >/dev/null 2>&1 && [[ "$(getenforce)" != "Disabled" ]]; then
     restorecon -Rv "$SSL_DIR" >/dev/null 2>&1 || true
   fi
@@ -187,7 +188,10 @@ ssl_generate_self_signed() {
 
   if ! command -v openssl >/dev/null 2>&1; then
     echo -e "${YELLOW}检测到 'openssl' 未安装，正在安装...${NC}"
-    install_pkgs
+    case "$PKG_MGR" in
+      apt-get) apt-get update -y && apt-get install -y openssl ;;
+      dnf|yum) $PKG_MGR install -y openssl ;;
+    esac
   fi
 
   mkdir -p "$SSL_DIR"
@@ -221,7 +225,6 @@ ssl_from_path() {
   KEY_PATH=$user_key_path
   echo -e "${GREEN}证书路径已确认。${NC}"
 
-  # RHEL/SELinux：恢复上下文
   if $IS_RHEL && command -v getenforce >/dev/null 2>&1 && [[ "$(getenforce)" != "Disabled" ]]; then
     restorecon -Rv "$(dirname "$CERT_PATH")" >/dev/null 2>&1 || true
     restorecon -Rv "$(dirname "$KEY_PATH")"  >/dev/null 2>&1 || true
@@ -237,7 +240,7 @@ handle_ssl_configuration() {
   echo "2) 生成自签名证书 (开发/测试)"
   echo "3) 输入服务器上已有证书和私钥的路径"
   read -rp "请输入选项 [1-3]: " ssl_choice
-  case $ssl_choice in
+  case ${ssl_choice:-} in
     1) ssl_from_paste "$domain_name" ;;
     2) ssl_generate_self_signed "$domain_name" ;;
     3) ssl_from_path ;;
@@ -246,7 +249,6 @@ handle_ssl_configuration() {
 }
 
 # --- Core Logic ---
-
 install_nginx() {
   if check_nginx_installed; then
     echo -e "${GREEN}Nginx 已安装。${NC}"
@@ -266,7 +268,6 @@ create_web_root() {
   mkdir -p "$web_root"
   chown -R "$NGINX_USER:$NGINX_USER" "$web_root" || true
 
-  # SELinux：为站点目录设置内容类型并恢复
   if $IS_RHEL && command -v getenforce >/dev/null 2>&1 && [[ "$(getenforce)" != "Disabled" ]]; then
     if command -v semanage >/dev/null 2>&1; then
       semanage fcontext -a -t httpd_sys_content_t "${web_root}(/.*)?" 2>/dev/null || true
@@ -278,14 +279,13 @@ create_web_root() {
 create_website_config() {
   echo -e "${BLUE}--- 添加一个新的静态网站 ---${NC}"
   read -rp "请输入域名 (例如: www.example.com): " domain_name
-  [ -z "$domain_name" ] && { echo -e "${RED}错误：域名不能为空。${NC}"; return 1; }
+  [ -z "${domain_name:-}" ] && { echo -e "${RED}错误：域名不能为空。${NC}"; return 1; }
 
   local default_web_root="/var/www/$domain_name"
   read -rp "网站根目录 (默认: $default_web_root): " web_root
   web_root=${web_root:-$default_web_root}
   create_web_root "$web_root"
 
-  # 创建占位页面
   if [ ! -f "$web_root/index.html" ]; then
     cat > "$web_root/index.html" <<EOF
 <!DOCTYPE html>
@@ -334,21 +334,20 @@ server {
 EOF
 
   echo -e "${GREEN}已创建配置：$cfg_path${NC}"
-
   enable_site "$domain_name" "$cfg_path"
 }
 
 create_proxy_config() {
   echo -e "${BLUE}--- 添加一个新的反向代理 ---${NC}"
   read -rp "请输入域名 (例如: app.example.com): " domain_name
-  [ -z "$domain_name" ] && { echo -e "${RED}错误：域名不能为空。${NC}"; return 1; }
+  [ -z "${domain_name:-}" ] && { echo -e "${RED}错误：域名不能为空。${NC}"; return 1; }
 
   read -rp "请输入要代理的后端地址 (例如: 127.0.0.1:8080): " proxy_pass_addr
-  [ -z "$proxy_pass_addr" ] && { echo -e "${RED}错误：后端地址不能为空。${NC}"; return 1; }
+  [ -z "${proxy_pass_addr:-}" ] && { echo -e "${RED}错误：后端地址不能为空。${NC}"; return 1; }
 
   local use_ssl=false
   read -rp "是否为此站点启用 SSL (https)? [y/N]: " enable_ssl
-  if [[ "$enable_ssl" =~ ^[yY]$ ]]; then
+  if [[ "${enable_ssl:-}" =~ ^[yY]$ ]]; then
     use_ssl=true
     handle_ssl_configuration "$domain_name" || { echo -e "${RED}SSL配置失败。${NC}"; return 1; }
   fi
@@ -398,6 +397,8 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade  \$http_upgrade;
         proxy_set_header Connection "upgrade";
+        proxy_read_timeout 300;
+        proxy_send_timeout 300;
     }
 }
 EOF
@@ -417,16 +418,16 @@ server {
         proxy_set_header X-Real-IP         \$remote_addr;
         proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+
+        proxy_read_timeout 300;
+        proxy_send_timeout 300;
     }
 }
 EOF
   fi
 
   echo -e "${GREEN}已创建配置：$cfg_path${NC}"
-
-  # RHEL: 确保 SELinux 允许代理
   selinux_allow_proxy_and_contexts
-
   enable_site "$domain_name" "$cfg_path"
 }
 
@@ -436,17 +437,16 @@ enable_site() {
 
   echo -e "${BLUE}正在启用站点 ${domain_name}...${NC}"
   if $IS_RHEL; then
-    # RHEL: 配置文件已在 conf.d 下，无需软链
+    # RHEL: 已处于 conf.d 目录下，无需软链
     :
   else
-    # Debian/Ubuntu: 建立软链到 sites-enabled
     ln -sf "$cfg_path" "$SITES_ENABLED/$domain_name"
   fi
 
   if nginx -t; then
     systemctl reload nginx
     echo -e "${GREEN}站点 ${domain_name} 已启用！${NC}"
-    echo -e "${YELLOW}确保域名已解析到本机 IP。${NC}"
+    echo -e "${YELLOW}确保域名已正确解析到本机 IP。${NC}"
   else
     echo -e "${RED}Nginx 配置测试失败！回滚...${NC}"
     if ! $IS_RHEL; then
@@ -476,19 +476,18 @@ delete_site() {
   local filename
   filename=$(basename "$site_to_delete")
   read -rp "确认删除站点 '${filename}' 配置？[y/N]: " confirmation
-  [[ "$confirmation" =~ ^[yY]$ ]] || { echo "已取消。"; return; }
+  [[ "${confirmation:-}" =~ ^[yY]$ ]] || { echo "已取消。"; return; }
 
   if ! $IS_RHEL; then
     rm -f "$SITES_ENABLED/${filename}"
   fi
   rm -f "$SITES_AVAILABLE/${filename}"
 
-  # 如证书位于脚本默认目录，询问是否删除
   local base="${filename%.*}"
   local cert_file_to_delete="$SSL_DIR/$base.crt"
   if [ -f "$cert_file_to_delete" ]; then
     read -rp "检测到 ${base} 的证书，要一并删除吗？[y/N]: " del_cert
-    if [[ "$del_cert" =~ ^[yY]$ ]]; then
+    if [[ "${del_cert:-}" =~ ^[yY]$ ]]; then
       rm -f "$SSL_DIR/$base.crt" "$SSL_DIR/$base.key"
       echo -e "${BLUE}已删除 SSL 证书文件。${NC}"
     fi
@@ -503,7 +502,7 @@ list_sites() {
   if $IS_RHEL; then
     ls -1 "$SITES_ENABLED"/*.conf 2>/dev/null | sed 's#.*/##' || echo -e "${YELLOW}无${NC}"
   else
-    if [ -d "$SITES_ENABLED" ] && ls -l "$SITES_ENABLED"/* >/dev/null 2>&1; then
+    if [ -d "$SITES_ENABLED" ] && compgen -G "$SITES_ENABLED/*" >/dev/null; then
       for s in "$SITES_ENABLED"/*; do
         [ -L "$s" ] && echo -e "-> ${GREEN}$(basename "$s")${NC} -> $(readlink -f "$s")"
       done
@@ -515,7 +514,7 @@ list_sites() {
 }
 
 show_menu() {
-  echo -e "\n${BLUE}Nginx 管理工具 v3.1${NC}"
+  echo -e "\n${BLUE}Nginx 管理工具 v3.1.1${NC}"
   echo "============================="
   echo "1) 安装/修复 Nginx"
   echo "2) 添加静态网站"
@@ -530,7 +529,7 @@ show_menu() {
 # --- Main ---
 check_root
 detect_os
-ensure_layout
+# 注意：此处不再在安装前调用 ensure_layout，避免 nginx.conf 不存在导致的 grep/sed 报错
 
 while true; do
   show_menu
