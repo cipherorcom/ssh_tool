@@ -499,16 +499,28 @@ delete_site() {
 
 list_sites() {
   echo -e "\n${BLUE}--- 当前已启用的 Nginx 站点 ---${NC}"
-  if $IS_RHEL; then
-    ls -1 "$SITES_ENABLED"/*.conf 2>/dev/null | sed 's#.*/##' || echo -e "${YELLOW}无${NC}"
+  local found_sites=0
+  if [ "$IS_RHEL" = true ]; then
+    # For RHEL/CentOS, enabled sites are directly in the conf.d directory.
+    for conf_file in "$SITES_ENABLED"/*.conf; do
+      if [ -f "$conf_file" ]; then
+        echo -e "-> ${GREEN}$(basename "$conf_file")${NC} (位于: ${YELLOW}$conf_file${NC})"
+        found_sites=$((found_sites + 1))
+      fi
+    done
   else
-    if [ -d "$SITES_ENABLED" ] && compgen -G "$SITES_ENABLED/*" >/dev/null; then
-      for s in "$SITES_ENABLED"/*; do
-        [ -L "$s" ] && echo -e "-> ${GREEN}$(basename "$s")${NC} -> $(readlink -f "$s")"
-      done
-    else
-      echo -e "${YELLOW}没有找到任何启用的站点。${NC}"
-    fi
+    # For Debian/Ubuntu, sites are enabled via symlinks.
+    for site_link in "$SITES_ENABLED"/*; do
+      if [ -L "$site_link" ]; then
+        target_file=$(readlink -f "$site_link")
+        echo -e "-> ${GREEN}$(basename "$site_link")${NC} (指向: ${YELLOW}$target_file${NC})"
+        found_sites=$((found_sites + 1))
+      fi
+    done
+  fi
+
+  if [ "$found_sites" -eq 0 ]; then
+    echo -e "${YELLOW}没有找到任何启用的站点。${NC}"
   fi
   echo ""
 }
