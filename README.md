@@ -25,3 +25,9 @@ wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/frps
 <img width="353" height="177" alt="image" src="https://github.com/user-attachments/assets/3c05e10e-d53f-4eec-823b-861e8a614e13" />
 
 <img width="259" height="199" alt="image" src="https://github.com/user-attachments/assets/1e1404ac-d549-4187-a9da-04b291b075f7" />
+
+## Sing-box脚本 
+修改自[eooce](https://github.com/eooce/Sing-box/blob/main/sing-box.sh),仅移除nginx相关代码
+```
+wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/sb.sh && chmod +x sb.sh && ./sb.sh
+```
