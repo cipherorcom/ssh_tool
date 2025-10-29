@@ -1,50 +1,236 @@
 #!/bin/bash
-# This script is used to add swap space to a Linux system.
-# It creates a swap file, sets the appropriate permissions, formats it as swap,
-# and enables it.
-# Usage: sudo ./add_swap.sh <size_in_MB>
-if [ "$EUID" -ne 0 ]; then
-    echo "Please run as root"
-    exit 1
-fi
+#========================================
+# Linux Swap Management Script
+#----------------------------------------
+# 功能：
+#   1️⃣ 增加 Swap（支持输入单位 MB/GB）
+#   2️⃣ 查看 Swap 状态
+#   3️⃣ 删除 Swap
+#----------------------------------------
+# 使用：sudo ./swap_manager.sh
+#========================================
 
-if [ -z "$1" ]; then
-    echo "Usage: sudo ./add_swap.sh <size_in_MB>"
-    exit 1
-fi
-
-SWAP_SIZE="$1"
 SWAP_FILE="/swapfile"
-# Check if the swap file already exists
-if [ -f "$SWAP_FILE" ]; then
-    echo "Swap file already exists. Please remove it first."
+
+# 检查是否为 root
+if [ "$EUID" -ne 0 ]; then
+    echo "❌ 请使用 root 权限运行此脚本"
     exit 1
 fi
-# Create a swap file of the specified size
-echo "Creating swap file of size ${SWAP_SIZE}MB..."
-fallocate -l "${SWAP_SIZE}M" "$SWAP_FILE" || {
-    echo "Failed to create swap file. Please check your disk space."
-    exit 1
+
+#----------------------------------------
+# 函数定义
+#----------------------------------------
+
+add_swap() {
+    echo -e "\n🔹 请输入要创建的 Swap 大小（支持 MB 或 GB，例如 2048M 或 4G）："
+    read -r SWAP_SIZE_INPUT
+
+    # 判断输入是否合法
+    if [[ ! "$SWAP_SIZE_INPUT" =~ ^[0-9]+[MmGg]?$ ]]; then
+        echo "❌ 输入无效，请输入例如 2048M 或 4G"
+        return
+    fi
+
+    # 转换为 MB
+    if [[ "$SWAP_SIZE_INPUT" =~ [Gg]$ ]]; then
+        SIZE_MB=$(( ${SWAP_SIZE_INPUT%[Gg]} * 1024 ))
+    elif [[ "$SWAP_SIZE_INPUT" =~ [Mm]$ ]]; then
+        SIZE_MB=${SWAP_SIZE_INPUT%[Mm]}
+    else
+        SIZE_MB=$SWAP_SIZE_INPUT
+    fi
+
+    # 检查是否存在
+    if [ -f "$SWAP_FILE" ]; then
+        echo "⚠️  Swap 文件已存在，请先删除后再创建。"
+        return
+    fi
+
+    echo "🧩 创建 ${SIZE_MB}MB 的 Swap 文件中..."
+    fallocate -l "${SIZE_MB}M" "$SWAP_FILE" || {
+        echo "❌ 创建失败，请检查磁盘空间。"
+        return
+    }
+
+    chmod 600 "$SWAP_FILE"
+    mkswap "$SWAP_FILE"
+    swapon "$SWAP_FILE"
+
+    # 写入 /etc/fstab
+    if ! grep -q "$SWAP_FILE" /etc/fstab; then
+        echo "$SWAP_FILE none swap sw 0 0" >> /etc/fstab
+    fi
+
+    echo "✅ 成功创建并启用了 Swap（${SIZE_MB}MB）"
+    free -h
 }
-# Set the correct permissions for the swap file
-chmod 600 "$SWAP_FILE" || { 
-    echo "Failed to set permissions on swap file."
-    exit 1
+
+show_swap() {
+    echo -e "\n📊 当前 Swap 状态：\n"
+    swapon --show
+    echo
+    free -h
+    echo
 }
-# Format the file as swap
-echo "Formatting swap file..."
-mkswap "$SWAP_FILE" || {
-    echo "Failed to format swap file."
-    exit 1
+
+remove_swap() {
+    echo -e "\n⚠️  正在删除 Swap..."
+
+    if swapon --show | grep -q "$SWAP_FILE"; then
+        echo "🔧 禁用 Swap..."
+        swapoff "$SWAP_FILE"
+    fi
+
+    if grep -q "$SWAP_FILE" /etc/fstab; then
+        echo "🧹 从 /etc/fstab 移除 Swap 记录..."
+        sed -i "\|$SWAP_FILE|d" /etc/fstab
+    fi
+
+    if [ -f "$SWAP_FILE" ]; then
+        echo "🗑️ 删除 Swap 文件..."
+        rm -f "$SWAP_FILE"
+    fi
+
+    echo "✅ Swap 删除完成"
 }
-# Enable the swap file
-echo "Enabling swap file..."
-swapon "$SWAP_FILE" || {
-    echo "Failed to enable swap file."
+
+#----------------------------------------
+# 主菜单
+#----------------------------------------
+
+while true; do
+    echo -e "\n============== Swap 管理菜单 =============="
+    echo "1️⃣  增加 Swap"
+    echo "2️⃣  查看 Swap 状态"
+    echo "3️⃣  删除 Swap"
+    echo "4️⃣  退出"
+    echo "=========================================="
+    read -p "请选择操作 [1-4]: " choice
+
+    case "$choice" in
+        1) add_swap ;;
+        2) show_swap ;;
+        3) remove_swap ;;
+        4) echo "👋 退出"; exit 0 ;;
+        *) echo "❌ 无效选项，请重新输入。" ;;
+    esac
+done
+#!/bin/bash
+#========================================
+# Linux Swap Management Script
+#----------------------------------------
+# 功能：
+#   1️⃣ 增加 Swap（支持输入单位 MB/GB）
+#   2️⃣ 查看 Swap 状态
+#   3️⃣ 删除 Swap
+#----------------------------------------
+# 使用：sudo ./swap_manager.sh
+#========================================
+
+SWAP_FILE="/swapfile"
+
+# 检查是否为 root
+if [ "$EUID" -ne 0 ]; then
+    echo "❌ 请使用 root 权限运行此脚本"
     exit 1
+fi
+
+#----------------------------------------
+# 函数定义
+#----------------------------------------
+
+add_swap() {
+    echo -e "\n🔹 请输入要创建的 Swap 大小（支持 MB 或 GB，例如 2048M 或 4G）："
+    read -r SWAP_SIZE_INPUT
+
+    # 判断输入是否合法
+    if [[ ! "$SWAP_SIZE_INPUT" =~ ^[0-9]+[MmGg]?$ ]]; then
+        echo "❌ 输入无效，请输入例如 2048M 或 4G"
+        return
+    fi
+
+    # 转换为 MB
+    if [[ "$SWAP_SIZE_INPUT" =~ [Gg]$ ]]; then
+        SIZE_MB=$(( ${SWAP_SIZE_INPUT%[Gg]} * 1024 ))
+    elif [[ "$SWAP_SIZE_INPUT" =~ [Mm]$ ]]; then
+        SIZE_MB=${SWAP_SIZE_INPUT%[Mm]}
+    else
+        SIZE_MB=$SWAP_SIZE_INPUT
+    fi
+
+    # 检查是否存在
+    if [ -f "$SWAP_FILE" ]; then
+        echo "⚠️  Swap 文件已存在，请先删除后再创建。"
+        return
+    fi
+
+    echo "🧩 创建 ${SIZE_MB}MB 的 Swap 文件中..."
+    fallocate -l "${SIZE_MB}M" "$SWAP_FILE" || {
+        echo "❌ 创建失败，请检查磁盘空间。"
+        return
+    }
+
+    chmod 600 "$SWAP_FILE"
+    mkswap "$SWAP_FILE"
+    swapon "$SWAP_FILE"
+
+    # 写入 /etc/fstab
+    if ! grep -q "$SWAP_FILE" /etc/fstab; then
+        echo "$SWAP_FILE none swap sw 0 0" >> /etc/fstab
+    fi
+
+    echo "✅ 成功创建并启用了 Swap（${SIZE_MB}MB）"
+    free -h
 }
-# Add the swap file to /etc/fstab for persistence across reboots
-echo "$SWAP_FILE none swap sw 0 0" >> /etc/fstab || {
-    echo "Failed to add swap file to /etc/fstab."
-    exit 1
+
+show_swap() {
+    echo -e "\n📊 当前 Swap 状态：\n"
+    swapon --show
+    echo
+    free -h
+    echo
 }
+
+remove_swap() {
+    echo -e "\n⚠️  正在删除 Swap..."
+
+    if swapon --show | grep -q "$SWAP_FILE"; then
+        echo "🔧 禁用 Swap..."
+        swapoff "$SWAP_FILE"
+    fi
+
+    if grep -q "$SWAP_FILE" /etc/fstab; then
+        echo "🧹 从 /etc/fstab 移除 Swap 记录..."
+        sed -i "\|$SWAP_FILE|d" /etc/fstab
+    fi
+
+    if [ -f "$SWAP_FILE" ]; then
+        echo "🗑️ 删除 Swap 文件..."
+        rm -f "$SWAP_FILE"
+    fi
+
+    echo "✅ Swap 删除完成"
+}
+
+#----------------------------------------
+# 主菜单
+#----------------------------------------
+
+while true; do
+    echo -e "\n============== Swap 管理菜单 =============="
+    echo "1️⃣  增加 Swap"
+    echo "2️⃣  查看 Swap 状态"
+    echo "3️⃣  删除 Swap"
+    echo "4️⃣  退出"
+    echo "=========================================="
+    read -p "请选择操作 [1-4]: " choice
+
+    case "$choice" in
+        1) add_swap ;;
+        2) show_swap ;;
+        3) remove_swap ;;
+        4) echo "👋 退出"; exit 0 ;;
+        *) echo "❌ 无效选项，请重新输入。" ;;
+    esac
+done
