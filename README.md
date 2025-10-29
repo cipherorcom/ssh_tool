@@ -1,7 +1,7 @@
 # ssh_tool
 Some SSH Tools
 
-## 添加swap
+## swap管理工具
 ```
 wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/add_swap.sh && chmod +x add_swap.sh && ./add_swap.sh 512
 ```
@@ -30,4 +30,8 @@ wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/frps
 修改自[eooce](https://github.com/eooce/Sing-box/blob/main/sing-box.sh),仅移除nginx相关代码
 ```
 wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/sb.sh && chmod +x sb.sh && ./sb.sh
+```
+## ZRAM管理工具
+```
+wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/add_swap.sh && chmod +x add_swap.sh && ./zram.sh
 ```
