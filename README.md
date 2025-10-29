@@ -33,5 +33,5 @@ wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/sb.s
 ```
 ## ZRAM管理工具
 ```
-wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/add_swap.sh && chmod +x add_swap.sh && ./zram.sh
+wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/zram.sh && chmod +x zram.sh && ./zram.sh
 ```
