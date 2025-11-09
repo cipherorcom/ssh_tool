@@ -3,7 +3,7 @@ Some SSH Tools
 
 ## swap管理工具
 ```
-wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/add_swap.sh && chmod +x add_swap.sh && ./add_swap.sh 512
+wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/swap.sh && chmod +x swap.sh && ./swap.sh
 ```
 
 ## 修改SSH端口和用户密码
