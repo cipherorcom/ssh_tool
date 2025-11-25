@@ -383,6 +383,7 @@ server {
     ssl_prefer_server_ciphers off;
     ssl_session_cache shared:SSL:10m;
     ssl_session_tickets off;
+    client_max_body_size 0;
 
     access_log /var/log/nginx/${domain_name}.access.log;
     error_log  /var/log/nginx/${domain_name}.error.log;
