@@ -432,6 +432,103 @@ EOF
   enable_site "$domain_name" "$cfg_path"
 }
 
+create_cdn_proxy() {
+  echo -e "${BLUE}--- 添加一个 CDN 中转代理 ---${NC}"
+  read -rp "请输入本地域名（例如: cdn.example.com）: " domain_name
+  [ -z "${domain_name:-}" ] && { echo -e "${RED}错误：域名不能为空。${NC}"; return 1; }
+
+  read -rp "请输入要中转的目标 URL（例如: https://target.com/xxx/ ）: " target_url
+  [ -z "${target_url:-}" ] && { echo -e "${RED}错误：目标 URL 不能为空。${NC}"; return 1; }
+
+  # 是否启用 SSL
+  local use_ssl=false
+  read -rp "是否启用 HTTPS（SSL）？[y/N]: " enable_ssl
+  if [[ "${enable_ssl:-}" =~ ^[yY]$ ]]; then
+      use_ssl=true
+      handle_ssl_configuration "$domain_name" || { echo -e "${RED}SSL 配置失败。${NC}"; return 1; }
+  fi
+
+  # 配置路径
+  local cfg_path
+  if $IS_RHEL; then
+      cfg_path="$SITES_AVAILABLE/${domain_name}${CONF_EXT}"
+  else
+      cfg_path="$SITES_AVAILABLE/${domain_name}"
+  fi
+
+  if [ -f "$cfg_path" ]; then
+    echo -e "${RED}错误：配置已存在：$cfg_path${NC}"; return 1;
+  fi
+
+  # CDN优化头
+  local cdn_headers="
+        proxy_set_header Host \$http_host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header CF-Connecting-IP \$remote_addr;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header X-Forwarded-Scheme \$scheme;
+        proxy_set_header Accept-Encoding \"\";  # 禁止 gzip 以免 CDN 内容错乱
+  "
+
+  # 写入配置
+  if $use_ssl; then
+    cat > "$cfg_path" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $domain_name;
+    return 301 https://\$host\$request_uri;
+}
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name $domain_name;
+
+    ssl_certificate     $CERT_PATH;
+    ssl_certificate_key $KEY_PATH;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    access_log /var/log/nginx/${domain_name}.cdn.access.log;
+    error_log  /var/log/nginx/${domain_name}.cdn.error.log;
+
+    location / {
+        proxy_pass $target_url;
+$cdn_headers
+        proxy_read_timeout 300;
+        proxy_send_timeout 300;
+    }
+}
+EOF
+  else
+    cat > "$cfg_path" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $domain_name;
+
+    access_log /var/log/nginx/${domain_name}.cdn.access.log;
+    error_log  /var/log/nginx/${domain_name}.cdn.error.log;
+
+    location / {
+        proxy_pass $target_url;
+$cdn_headers
+        proxy_read_timeout 300;
+        proxy_send_timeout 300;
+    }
+}
+EOF
+  fi
+
+  echo -e "${GREEN}已创建 CDN 代理配置：$cfg_path${NC}"
+  selinux_allow_proxy_and_contexts
+  enable_site "$domain_name" "$cfg_path"
+}
+
+
 enable_site() {
   local domain_name=$1
   local cfg_path=$2
@@ -532,9 +629,10 @@ show_menu() {
   echo "1) 安装/修复 Nginx"
   echo "2) 添加静态网站"
   echo "3) 添加反向代理"
-  echo "4) 删除站点"
-  echo "5) 列出已启用站点"
-  echo "6) 退出"
+  echo "4) 添加 CDN 中转代理"
+  echo "5) 删除站点"
+  echo "6) 列出已启用站点"
+  echo "7) 退出"
   echo "============================="
   read -rp "请输入选项 [1-6]: " main_choice
 }
@@ -550,9 +648,10 @@ while true; do
     1) install_nginx ;;
     2) create_website_config ;;
     3) create_proxy_config ;;
-    4) delete_site ;;
-    5) list_sites ;;
-    6) exit 0 ;;
+    4) create_cdn_proxy ;;
+    5) delete_site ;;
+    6) list_sites ;;
+    7) exit 0 ;;
     *) echo -e "${RED}无效选项。${NC}" ;;
   esac
   read -rp "按 [Enter] 返回主菜单..."
