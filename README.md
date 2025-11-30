@@ -1,5 +1,8 @@
 # ssh_tool
 Some SSH Tools
+```
+wget https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads/main/ssh_tools.sh && chmod +x ssh_tools.sh && ./ssh_tools.sh
+```
 
 ## swap管理工具
 ```
