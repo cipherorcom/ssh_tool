@@ -1,10 +1,9 @@
 #!/bin/bash
 # =========================================================================
-# Script Name: Nginx Installation and Management Tool
-# Description: Installs Nginx and manages website/proxy configs with SSL.
-# Author(s):   cipherorcom (base) + Gemini AI (features)
-#              Revised for AlmaLinux/CentOS/RHEL/Debian/Ubuntu by ChatGPT
-# Version:     3.1.1
+# Script Name: Nginx Installation and Management Tool (Traffic Proxy)
+# Description: Installs Nginx and sets up pure Traffic-Forwarding CDN.
+#              Optimized for SMALL DISK VPS (No Caching, RAM Buffering only).
+# Version:     3.3.0 (Small Disk / Traffic Only)
 # =========================================================================
 
 set -euo pipefail
@@ -16,14 +15,14 @@ YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# --- Global Variables (will be adjusted by detect_os) ---
+# --- Global Variables ---
 SITES_AVAILABLE="/etc/nginx/sites-available"
 SITES_ENABLED="/etc/nginx/sites-enabled"
 SSL_DIR="/etc/nginx/ssl"
-NGINX_USER="www-data"   # Debian/Ubuntu default
+NGINX_USER="www-data"
 PKG_MGR=""
-IS_RHEL=false           # AlmaLinux/CentOS/RHEL family
-CONF_EXT=""             # ".conf" on RHEL's conf.d, "" on Debian's sites-available
+IS_RHEL=false
+CONF_EXT=""
 OPENSSL_PKG="openssl"
 
 CERT_PATH=""
@@ -95,17 +94,13 @@ install_pkgs() {
 }
 
 ensure_layout() {
-  # 在需要的位置创建目录，并仅在 nginx.conf 存在时修改 include
   if $IS_RHEL; then
     mkdir -p "$SITES_AVAILABLE" "$SSL_DIR"
-    # RHEL: /etc/nginx/nginx.conf 默认 include conf.d/*.conf; 无需修改
   else
     mkdir -p "$SITES_AVAILABLE" "$SITES_ENABLED" "$SSL_DIR"
     local conf="/etc/nginx/nginx.conf"
     if [ -f "$conf" ]; then
-      # 如果尚未包含 sites-enabled，则插入一行
       if ! grep -qE 'include[[:space:]]+/etc/nginx/sites-enabled/\*' "$conf"; then
-        # 在 http { 后插入 include 行（避免重复）
         sed -i '/http[[:space:]]*{/a \    include /etc/nginx/sites-enabled/*;' "$conf"
       fi
     else
@@ -131,7 +126,6 @@ config_firewall() {
 }
 
 selinux_allow_proxy_and_contexts() {
-  # 仅在 RHEL/AlmaLinux 且 SELinux 开启时处理
   if $IS_RHEL && command -v getenforce >/dev/null 2>&1; then
     if [[ "$(getenforce)" != "Disabled" ]]; then
       if command -v setsebool >/dev/null 2>&1; then
@@ -263,19 +257,6 @@ install_nginx() {
   echo -e "${GREEN}Nginx 安装并基础配置完成！${NC}"
 }
 
-create_web_root() {
-  local web_root=$1
-  mkdir -p "$web_root"
-  chown -R "$NGINX_USER:$NGINX_USER" "$web_root" || true
-
-  if $IS_RHEL && command -v getenforce >/dev/null 2>&1 && [[ "$(getenforce)" != "Disabled" ]]; then
-    if command -v semanage >/dev/null 2>&1; then
-      semanage fcontext -a -t httpd_sys_content_t "${web_root}(/.*)?" 2>/dev/null || true
-    fi
-    restorecon -Rv "$web_root" >/dev/null 2>&1 || true
-  fi
-}
-
 create_website_config() {
   echo -e "${BLUE}--- 添加一个新的静态网站 ---${NC}"
   read -rp "请输入域名 (例如: www.example.com): " domain_name
@@ -284,163 +265,56 @@ create_website_config() {
   local default_web_root="/var/www/$domain_name"
   read -rp "网站根目录 (默认: $default_web_root): " web_root
   web_root=${web_root:-$default_web_root}
-  create_web_root "$web_root"
+  mkdir -p "$web_root"
+  chown -R "$NGINX_USER:$NGINX_USER" "$web_root" || true
+  
+  # SELinux
+  if $IS_RHEL && command -v getenforce >/dev/null 2>&1 && [[ "$(getenforce)" != "Disabled" ]]; then
+    if command -v semanage >/dev/null 2>&1; then
+      semanage fcontext -a -t httpd_sys_content_t "${web_root}(/.*)?" 2>/dev/null || true
+    fi
+    restorecon -Rv "$web_root" >/dev/null 2>&1 || true
+  fi
 
   if [ ! -f "$web_root/index.html" ]; then
     cat > "$web_root/index.html" <<EOF
 <!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8"/>
-  <title>Welcome to $domain_name!</title>
-  <style>body{width:35em;margin:0 auto;font-family:Tahoma,Verdana,Arial,sans-serif;}</style>
-</head>
-<body>
-  <h1>Welcome to $domain_name!</h1>
-  <p>Nginx server block for <strong>$domain_name</strong> is working.</p>
-  <p>Web root: <code>$web_root</code></p>
-</body>
-</html>
+<html><head><title>$domain_name</title></head>
+<body><h1>Welcome to $domain_name!</h1></body></html>
 EOF
   fi
 
   local cfg_path
-  if $IS_RHEL; then
-    cfg_path="$SITES_AVAILABLE/${domain_name}${CONF_EXT}"
-  else
-    cfg_path="$SITES_AVAILABLE/${domain_name}"
-  fi
+  if $IS_RHEL; then cfg_path="$SITES_AVAILABLE/${domain_name}${CONF_EXT}"; else cfg_path="$SITES_AVAILABLE/${domain_name}"; fi
 
-  if [ -f "$cfg_path" ]; then
-    echo -e "${RED}错误：配置已存在：$cfg_path${NC}"; return 1;
-  fi
+  if [ -f "$cfg_path" ]; then echo -e "${RED}错误：配置已存在：$cfg_path${NC}"; return 1; fi
 
   cat > "$cfg_path" <<EOF
 server {
     listen 80;
     listen [::]:80;
     server_name $domain_name;
-
     root $web_root;
     index index.html index.htm;
-
-    location / {
-        try_files \$uri \$uri/ =404;
-    }
-
+    location / { try_files \$uri \$uri/ =404; }
     access_log /var/log/nginx/${domain_name}.access.log;
     error_log  /var/log/nginx/${domain_name}.error.log;
 }
 EOF
-
   echo -e "${GREEN}已创建配置：$cfg_path${NC}"
-  enable_site "$domain_name" "$cfg_path"
-}
-
-create_proxy_config() {
-  echo -e "${BLUE}--- 添加一个新的反向代理 ---${NC}"
-  read -rp "请输入域名 (例如: app.example.com): " domain_name
-  [ -z "${domain_name:-}" ] && { echo -e "${RED}错误：域名不能为空。${NC}"; return 1; }
-
-  read -rp "请输入要代理的后端地址 (例如: 127.0.0.1:8080): " proxy_pass_addr
-  [ -z "${proxy_pass_addr:-}" ] && { echo -e "${RED}错误：后端地址不能为空。${NC}"; return 1; }
-
-  local use_ssl=false
-  read -rp "是否为此站点启用 SSL (https)? [y/N]: " enable_ssl
-  if [[ "${enable_ssl:-}" =~ ^[yY]$ ]]; then
-    use_ssl=true
-    handle_ssl_configuration "$domain_name" || { echo -e "${RED}SSL配置失败。${NC}"; return 1; }
-  fi
-
-  local cfg_path
-  if $IS_RHEL; then
-    cfg_path="$SITES_AVAILABLE/${domain_name}${CONF_EXT}"
-  else
-    cfg_path="$SITES_AVAILABLE/${domain_name}"
-  fi
-
-  if [ -f "$cfg_path" ]; then
-    echo -e "${RED}错误：配置已存在：$cfg_path${NC}"; return 1;
-  fi
-
-  if $use_ssl; then
-    cat > "$cfg_path" <<EOF
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $domain_name;
-    return 301 https://\$host\$request_uri;
-}
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name $domain_name;
-
-    ssl_certificate     $CERT_PATH;
-    ssl_certificate_key $KEY_PATH;
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers off;
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_tickets off;
-    client_max_body_size 0;
-
-    access_log /var/log/nginx/${domain_name}.access.log;
-    error_log  /var/log/nginx/${domain_name}.error.log;
-
-    location / {
-        proxy_pass http://$proxy_pass_addr;
-        proxy_set_header Host              \$host;
-        proxy_set_header X-Real-IP         \$remote_addr;
-        proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade  \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_read_timeout 300;
-        proxy_send_timeout 300;
-    }
-}
-EOF
-  else
-    cat > "$cfg_path" <<EOF
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $domain_name;
-
-    access_log /var/log/nginx/${domain_name}.access.log;
-    error_log  /var/log/nginx/${domain_name}.error.log;
-
-    location / {
-        proxy_pass http://$proxy_pass_addr;
-        proxy_set_header Host              \$host;
-        proxy_set_header X-Real-IP         \$remote_addr;
-        proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-
-        proxy_read_timeout 300;
-        proxy_send_timeout 300;
-    }
-}
-EOF
-  fi
-
-  echo -e "${GREEN}已创建配置：$cfg_path${NC}"
-  selinux_allow_proxy_and_contexts
   enable_site "$domain_name" "$cfg_path"
 }
 
 create_cdn_proxy() {
-  echo -e "${BLUE}--- 添加一个 CDN 中转代理 ---${NC}"
+  echo -e "${BLUE}--- 添加 CDN 线路加速 (无硬盘缓存) ---${NC}"
+  echo -e "${YELLOW}说明：此模式不会占用 VPS 硬盘空间，主要用于利用 VPS 的优质线路进行流量中转。${NC}"
+  
   read -rp "请输入本地域名（例如: cdn.example.com）: " domain_name
   [ -z "${domain_name:-}" ] && { echo -e "${RED}错误：域名不能为空。${NC}"; return 1; }
 
-  read -rp "请输入要中转的目标 URL（例如: https://target.com/xxx/ ）: " target_url
-  [ -z "${target_url:-}" ] && { echo -e "${RED}错误：目标 URL 不能为空。${NC}"; return 1; }
+  read -rp "请输入源站 URL（例如: https://origin.com 或 http://1.2.3.4）: " target_url
+  [ -z "${target_url:-}" ] && { echo -e "${RED}错误：源站 URL 不能为空。${NC}"; return 1; }
 
-  # 是否启用 SSL
   local use_ssl=false
   read -rp "是否启用 HTTPS（SSL）？[y/N]: " enable_ssl
   if [[ "${enable_ssl:-}" =~ ^[yY]$ ]]; then
@@ -448,31 +322,39 @@ create_cdn_proxy() {
       handle_ssl_configuration "$domain_name" || { echo -e "${RED}SSL 配置失败。${NC}"; return 1; }
   fi
 
-  # 配置路径
   local cfg_path
-  if $IS_RHEL; then
-      cfg_path="$SITES_AVAILABLE/${domain_name}${CONF_EXT}"
-  else
-      cfg_path="$SITES_AVAILABLE/${domain_name}"
-  fi
+  if $IS_RHEL; then cfg_path="$SITES_AVAILABLE/${domain_name}${CONF_EXT}"; else cfg_path="$SITES_AVAILABLE/${domain_name}"; fi
 
-  if [ -f "$cfg_path" ]; then
-    echo -e "${RED}错误：配置已存在：$cfg_path${NC}"; return 1;
-  fi
+  if [ -f "$cfg_path" ]; then echo -e "${RED}错误：配置已存在：$cfg_path${NC}"; return 1; fi
 
-  # CDN优化头
-  local cdn_headers="
-        proxy_set_header Host \$http_host;
+  # 纯流量转发核心配置 (无 Cache)
+  local cdn_conf="
+        proxy_pass $target_url;
+        
+        # --- 小硬盘核心优化 ---
+        # 关闭磁盘缓冲：Nginx 接收到数据后立即转发给客户端，不写入硬盘临时文件
+        proxy_buffering off;
+        
+        # --- 连接优化 ---
+        # 强制使用 HTTP/1.1 长连接，减少 TCP 握手开销
+        proxy_http_version 1.1;
+        proxy_set_header Connection \"\";
+
+        # --- 头部处理 ---
+        # 传递真实 IP 给源站
+        proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header CF-Connecting-IP \$remote_addr;
-        proxy_set_header X-Forwarded-Host \$host;
-        proxy_set_header X-Forwarded-Scheme \$scheme;
-        proxy_set_header Accept-Encoding \"\";  # 禁止 gzip 以免 CDN 内容错乱
+        
+        # 支持 HTTPS 源站 SNI (防止源站握手失败)
+        proxy_ssl_server_name on;
+        
+        # 超时设置 (秒)
+        proxy_read_timeout 300;
+        proxy_send_timeout 300;
   "
 
-  # 写入配置
   if $use_ssl; then
     cat > "$cfg_path" <<EOF
 server {
@@ -490,16 +372,13 @@ server {
     ssl_certificate_key $KEY_PATH;
 
     ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers off;
+    ssl_ciphers HIGH:!aNULL:!MD5;
 
     access_log /var/log/nginx/${domain_name}.cdn.access.log;
     error_log  /var/log/nginx/${domain_name}.cdn.error.log;
 
     location / {
-        proxy_pass $target_url;
-$cdn_headers
-        proxy_read_timeout 300;
-        proxy_send_timeout 300;
+$cdn_conf
     }
 }
 EOF
@@ -514,42 +393,29 @@ server {
     error_log  /var/log/nginx/${domain_name}.cdn.error.log;
 
     location / {
-        proxy_pass $target_url;
-$cdn_headers
-        proxy_read_timeout 300;
-        proxy_send_timeout 300;
+$cdn_conf
     }
 }
 EOF
   fi
 
-  echo -e "${GREEN}已创建 CDN 代理配置：$cfg_path${NC}"
+  echo -e "${GREEN}已创建加速代理配置：$cfg_path${NC}"
   selinux_allow_proxy_and_contexts
   enable_site "$domain_name" "$cfg_path"
 }
 
-
 enable_site() {
   local domain_name=$1
   local cfg_path=$2
-
   echo -e "${BLUE}正在启用站点 ${domain_name}...${NC}"
-  if $IS_RHEL; then
-    # RHEL: 已处于 conf.d 目录下，无需软链
-    :
-  else
-    ln -sf "$cfg_path" "$SITES_ENABLED/$domain_name"
-  fi
+  if ! $IS_RHEL; then ln -sf "$cfg_path" "$SITES_ENABLED/$domain_name"; fi
 
   if nginx -t; then
     systemctl reload nginx
     echo -e "${GREEN}站点 ${domain_name} 已启用！${NC}"
-    echo -e "${YELLOW}确保域名已正确解析到本机 IP。${NC}"
   else
     echo -e "${RED}Nginx 配置测试失败！回滚...${NC}"
-    if ! $IS_RHEL; then
-      rm -f "$SITES_ENABLED/$domain_name"
-    fi
+    if ! $IS_RHEL; then rm -f "$SITES_ENABLED/$domain_name"; fi
   fi
 }
 
@@ -576,82 +442,54 @@ delete_site() {
   read -rp "确认删除站点 '${filename}' 配置？[y/N]: " confirmation
   [[ "${confirmation:-}" =~ ^[yY]$ ]] || { echo "已取消。"; return; }
 
-  if ! $IS_RHEL; then
-    rm -f "$SITES_ENABLED/${filename}"
-  fi
+  if ! $IS_RHEL; then rm -f "$SITES_ENABLED/${filename}"; fi
   rm -f "$SITES_AVAILABLE/${filename}"
 
   local base="${filename%.*}"
-  local cert_file_to_delete="$SSL_DIR/$base.crt"
-  if [ -f "$cert_file_to_delete" ]; then
-    read -rp "检测到 ${base} 的证书，要一并删除吗？[y/N]: " del_cert
-    if [[ "${del_cert:-}" =~ ^[yY]$ ]]; then
-      rm -f "$SSL_DIR/$base.crt" "$SSL_DIR/$base.key"
-      echo -e "${BLUE}已删除 SSL 证书文件。${NC}"
-    fi
+  if [ -f "$SSL_DIR/$base.crt" ]; then
+    read -rp "删除证书文件？[y/N]: " del_cert
+    if [[ "${del_cert:-}" =~ ^[yY]$ ]]; then rm -f "$SSL_DIR/$base.crt" "$SSL_DIR/$base.key"; fi
   fi
-
   systemctl reload nginx || true
   echo -e "${GREEN}站点 '${filename}' 已删除。${NC}"
 }
 
 list_sites() {
   echo -e "\n${BLUE}--- 当前已启用的 Nginx 站点 ---${NC}"
-  local found_sites=0
-  if [ "$IS_RHEL" = true ]; then
-    # For RHEL/CentOS, enabled sites are directly in the conf.d directory.
-    for conf_file in "$SITES_ENABLED"/*.conf; do
-      if [ -f "$conf_file" ]; then
-        echo -e "-> ${GREEN}$(basename "$conf_file")${NC} (位于: ${YELLOW}$conf_file${NC})"
-        found_sites=$((found_sites + 1))
-      fi
-    done
+  if $IS_RHEL; then
+    ls -1 "$SITES_ENABLED"/*.conf 2>/dev/null || echo "无"
   else
-    # For Debian/Ubuntu, sites are enabled via symlinks.
-    for site_link in "$SITES_ENABLED"/*; do
-      if [ -L "$site_link" ]; then
-        target_file=$(readlink -f "$site_link")
-        echo -e "-> ${GREEN}$(basename "$site_link")${NC} (指向: ${YELLOW}$target_file${NC})"
-        found_sites=$((found_sites + 1))
-      fi
-    done
-  fi
-
-  if [ "$found_sites" -eq 0 ]; then
-    echo -e "${YELLOW}没有找到任何启用的站点。${NC}"
+    ls -1 "$SITES_ENABLED"/* 2>/dev/null || echo "无"
   fi
   echo ""
 }
 
 show_menu() {
-  echo -e "\n${BLUE}Nginx 管理工具 v3.1.1${NC}"
-  echo "============================="
+  echo -e "\n${BLUE}Nginx 管理工具 (流量转发版 v3.3.0)${NC}"
+  echo "==========================================="
   echo "1) 安装/修复 Nginx"
   echo "2) 添加静态网站"
-  echo "3) 添加反向代理"
-  echo "4) 添加 CDN 中转代理"
-  echo "5) 删除站点"
-  echo "6) 列出已启用站点"
-  echo "7) 退出"
-  echo "============================="
+  echo "3) 添加 CDN 线路加速 (无缓存/小硬盘)"
+  echo "4) 删除站点"
+  echo "5) 列出已启用站点"
+  echo "6) 退出"
+  echo "==========================================="
   read -rp "请输入选项 [1-6]: " main_choice
 }
 
 # --- Main ---
 check_root
 detect_os
-# 注意：此处不再在安装前调用 ensure_layout，避免 nginx.conf 不存在导致的 grep/sed 报错
 
 while true; do
   show_menu
   case ${main_choice:-} in
     1) install_nginx ;;
     2) create_website_config ;;
-    3) create_proxy_config ;;
-    4) create_cdn_proxy ;;
-    5) delete_site ;;
-    6) list_sites ;;
-    7) exit 0 ;;
+    3) create_cdn_proxy ;;
+    4) delete_site ;;
+    5) list_sites ;;
+    6) exit 0 ;;
     *) echo -e "${RED}无效选项。${NC}" ;;
   esac
   read -rp "按 [Enter] 返回主菜单..."
