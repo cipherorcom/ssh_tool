@@ -152,7 +152,7 @@ main_menu() {
     echo -e "${GREEN}5.${PLAIN} zram管理 (zram.sh)"
     echo -e "${GREEN}6.${PLAIN} Sing-box四合一 (sb.sh)"
     echo -e "${GREEN}7.${PLAIN} Zsh一键安装 (zsh.sh)"
-    echo -e "${GREEN}8.${PLAIN} Docker 一键安装 (get.docker.com) ${YELLOW} [新增]${PLAIN}" # 新增选项
+    echo -e "${GREEN}8.${PLAIN} Docker 一键安装 (get.docker.com)"
     echo -e "${BLUE}================================================${PLAIN}"
     echo -e "${YELLOW}0.${PLAIN} 退出脚本"
     echo ""
