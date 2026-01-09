@@ -6,7 +6,7 @@
 # GitHub 用户名和仓库名
 GITHUB_USER="cipherorcom"
 REPO_NAME="ssh_tool"
-# 分支名称 (如果脚本无法下载，请尝试改为 master)
+# 分支名称
 BRANCH="main" 
 
 # 基础下载链接构造
@@ -31,7 +31,7 @@ check_dependencies() {
         echo -e "${YELLOW}未找到 wget，将尝试安装...${PLAIN}"
         missing_tools=1
     fi
-    # 检查 curl (新增)
+    # 检查 curl
     if ! command -v curl &> /dev/null; then
         echo -e "${YELLOW}未找到 curl，将尝试安装...${PLAIN}"
         missing_tools=1
@@ -53,12 +53,10 @@ check_dependencies() {
 }
 
 # 下载并执行脚本的函数
-# 参数 $1: 脚本文件名 (例如 check_cpu.sh)
 run_script() {
     local script_name=$1
     echo -e "${GREEN}正在从仓库获取 ${script_name} ...${PLAIN}"
     
-    # 下载脚本
     wget -O "$script_name" "${BASE_URL}/${script_name}"
 
     if [ $? -eq 0 ]; then
@@ -66,112 +64,128 @@ run_script() {
         chmod +x "$script_name"
         ./"$script_name"
         
-        # 执行完后清理（可选，如果想保留脚本请注释掉下面这行）
+        # 执行完后清理
         rm -f "$script_name"
     else
         echo -e "${RED}下载失败！请检查以下几点：${PLAIN}"
-        echo "1. 仓库地址是否正确: https://github.com/${GITHUB_USER}/${REPO_NAME}"
-        echo "2. 分支名称是否正确 (当前尝试: ${BRANCH})"
-        echo "3. 文件名 ${script_name} 是否存在于仓库中"
+        echo "1. 仓库地址: https://github.com/${GITHUB_USER}/${REPO_NAME}"
+        echo "2. 文件名 ${script_name} 是否存在"
     fi
     
-    # 执行完暂停，按任意键回菜单
+    # 执行完暂停
     echo ""
-    read -n 1 -s -r -p "按任意键返回主菜单..."
-    main_menu
+    read -n 1 -s -r -p "按任意键继续..."
 }
 
-# Docker 一键安装函数
-install_docker() {
-    clear
-    echo -e "${BLUE}================================================${PLAIN}"
-    echo -e "${BLUE}            Docker 一键安装               ${PLAIN}"
-    echo -e "${BLUE}================================================${PLAIN}"
-    
+# ==================================================
+# Docker 管理模块
+# ==================================================
+
+# Docker 安装函数 (保持本地执行，因为只需要拉取官方脚本)
+install_docker_local() {
     # 检查 Docker 是否已安装
     if command -v docker &> /dev/null; then
-        echo -e "${YELLOW}Docker 似乎已安装，版本信息: ${PLAIN}"
-        docker version --format '{{.Server.Version}}'
-        echo -e "${YELLOW}如果您需要重新安装，请先手动卸载。${PLAIN}"
-        # 仍然提供继续安装的选项，以防万一
-        read -p "是否仍然继续安装 Docker? (y/N): " continue_install
+        echo -e "${YELLOW}Docker 似乎已安装，版本: $(docker version --format '{{.Server.Version}}')${PLAIN}"
+        read -p "是否强制重新安装? (y/N): " continue_install
         if [[ ! "$continue_install" =~ ^[Yy]$ ]]; then
             echo -e "${GREEN}取消安装。${PLAIN}"
-            echo ""
-            read -n 1 -s -r -p "按任意键返回主菜单..."
-            main_menu
             return
         fi
     fi
 
-    echo -e "${GREEN}正在从 get.docker.com 获取并执行安装脚本...${PLAIN}"
-    
-    # 执行 Docker 官方安装脚本
-    # 官方推荐方式: curl -fsSL https://get.docker.com | sh
-    # 你指定的脚本获取方式: curl -fsSL get.docker.com -o get-docker.sh && sh get-docker.sh
-    # 为了清晰和标准，我们使用下载后执行的方式。
+    echo -e "${GREEN}正在获取官方安装脚本 (get.docker.com)...${PLAIN}"
     curl -fsSL get.docker.com -o get-docker.sh
 
     if [ $? -eq 0 ]; then
-        echo -e "${GREEN}Docker 安装脚本下载成功，正在执行...${PLAIN}"
+        echo -e "${GREEN}脚本下载成功，开始安装...${PLAIN}"
         sh get-docker.sh
         
         if [ $? -eq 0 ]; then
             echo -e "${GREEN}Docker 安装完成！${PLAIN}"
-            echo -e "${YELLOW}提示: 为了让非 root 用户也能使用 Docker，请运行: ${PLAIN}"
-            echo -e "    ${BLUE}sudo usermod -aG docker \$USER${PLAIN}"
-            echo -e "${YELLOW}然后重新登录 SSH 会话。${PLAIN}"
+            echo -e "${YELLOW}提示: 非 root 用户请执行: ${BLUE}sudo usermod -aG docker \$USER${PLAIN}"
         else
-            echo -e "${RED}Docker 安装脚本执行失败！${PLAIN}"
+            echo -e "${RED}安装脚本执行失败！${PLAIN}"
         fi
-        
-        # 清理安装脚本
         rm -f get-docker.sh
     else
-        echo -e "${RED}Docker 安装脚本下载失败！请检查网络连接。${PLAIN}"
+        echo -e "${RED}无法连接到 get.docker.com，请检查网络。${PLAIN}"
     fi
     
-    # 执行完暂停，按任意键回菜单
     echo ""
-    read -n 1 -s -r -p "按任意键返回主菜单..."
-    main_menu
+    read -n 1 -s -r -p "按任意键继续..."
+}
+
+# Docker 管理子菜单
+docker_menu() {
+    while true; do
+        clear
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${BLUE}            Docker 管理菜单                     ${PLAIN}"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${GREEN}1.${PLAIN} 安装 Docker (get.docker.com)"
+        echo -e "${GREEN}2.${PLAIN} 配置 镜像加速/代理 (运行 docker_mirror.sh)"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${YELLOW}0.${PLAIN} 返回主菜单"
+        echo ""
+        read -p "请输入选项: " sub_choice
+
+        case $sub_choice in
+            1)
+                install_docker_local
+                ;;
+            2)
+                # 这里调用 run_script，你需要确保仓库里有 docker_mirror.sh
+                run_script "set_docker_mirror.sh"
+                ;;
+            0)
+                # 退出子循环，返回主菜单
+                return 
+                ;;
+            *)
+                echo -e "${RED}无效输入${PLAIN}"
+                sleep 1
+                ;;
+        esac
+    done
 }
 
 # ==================================================
 # 主菜单
 # ==================================================
 main_menu() {
-    clear
-    echo -e "${BLUE}================================================${PLAIN}"
-    echo -e "${BLUE}    SSH Tool 综合管理脚本 (仓库: ${GITHUB_USER}) ${PLAIN}"
-    echo -e "${BLUE}================================================${PLAIN}"
-    echo -e "${GREEN}1.${PLAIN} swap管理 (swap.sh)"
-    echo -e "${GREEN}2.${PLAIN} 修改SSH端口及密码 (change_ssh.sh)"
-    echo -e "${GREEN}3.${PLAIN} Nginx管理 (nginx.sh)"
-    echo -e "${GREEN}4.${PLAIN} frps管理 (frps.sh)"
-    echo -e "${GREEN}5.${PLAIN} zram管理 (zram.sh)"
-    echo -e "${GREEN}6.${PLAIN} Sing-box四合一 (sb.sh)"
-    echo -e "${GREEN}7.${PLAIN} Zsh一键安装 (zsh.sh)"
-    echo -e "${GREEN}8.${PLAIN} Docker 一键安装 (get.docker.com)"
-    echo -e "${GREEN}9.${PLAIN} 出站优先级管理脚本 (network.sh)"
-    echo -e "${BLUE}================================================${PLAIN}"
-    echo -e "${YELLOW}0.${PLAIN} 退出脚本"
-    echo ""
-    read -p "请输入选项数字 [0-8]: " choice
+    while true; do
+        clear
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${BLUE}    SSH Tool 综合管理脚本 (仓库: ${GITHUB_USER}) ${PLAIN}"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${GREEN}1.${PLAIN} swap管理 (swap.sh)"
+        echo -e "${GREEN}2.${PLAIN} 修改SSH端口及密码 (change_ssh.sh)"
+        echo -e "${GREEN}3.${PLAIN} Nginx管理 (nginx.sh)"
+        echo -e "${GREEN}4.${PLAIN} frps管理 (frps.sh)"
+        echo -e "${GREEN}5.${PLAIN} zram管理 (zram.sh)"
+        echo -e "${GREEN}6.${PLAIN} Sing-box四合一 (sb.sh)"
+        echo -e "${GREEN}7.${PLAIN} Zsh一键安装 (zsh.sh)"
+        echo -e "${GREEN}8.${PLAIN} Docker 管理 (安装/配置加速)" 
+        echo -e "${GREEN}9.${PLAIN} 出站优先级管理脚本 (network.sh)"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${YELLOW}0.${PLAIN} 退出脚本"
+        echo ""
+        read -p "请输入选项数字 [0-9]: " choice
 
-    case $choice in
-        1) run_script "swap.sh" ;;
-        2) run_script "change_ssh.sh" ;;
-        3) run_script "nginx.sh" ;;
-        4) run_script "frps.sh" ;;
-        5) run_script "zram.sh" ;;
-        6) run_script "sb.sh" ;;
-        7) run_script "zsh.sh" ;;
-        8) install_docker ;; # 调用新增的 Docker 安装函数
-        9) run_script "network.sh" ;;
-        0) echo "退出。"; exit 0 ;;
-        *) echo -e "${RED}无效输入，请重新选择。${PLAIN}"; sleep 1; main_menu ;;
-    esac
+        case $choice in
+            1) run_script "swap.sh" ;;
+            2) run_script "change_ssh.sh" ;;
+            3) run_script "nginx.sh" ;;
+            4) run_script "frps.sh" ;;
+            5) run_script "zram.sh" ;;
+            6) run_script "sb.sh" ;;
+            7) run_script "zsh.sh" ;;
+            8) docker_menu ;; 
+            9) run_script "network.sh" ;;
+            0) echo "退出。"; exit 0 ;;
+            *) echo -e "${RED}无效输入，请重新选择。${PLAIN}"; sleep 1 ;;
+        esac
+    done
 }
 
 # ==================================================
