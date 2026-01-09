@@ -153,6 +153,7 @@ main_menu() {
     echo -e "${GREEN}6.${PLAIN} Sing-box四合一 (sb.sh)"
     echo -e "${GREEN}7.${PLAIN} Zsh一键安装 (zsh.sh)"
     echo -e "${GREEN}8.${PLAIN} Docker 一键安装 (get.docker.com)"
+    echo -e "${GREEN}9.${PLAIN} 出站优先级管理脚本 (network.sh)"
     echo -e "${BLUE}================================================${PLAIN}"
     echo -e "${YELLOW}0.${PLAIN} 退出脚本"
     echo ""
@@ -167,6 +168,7 @@ main_menu() {
         6) run_script "sb.sh" ;;
         7) run_script "zsh.sh" ;;
         8) install_docker ;; # 调用新增的 Docker 安装函数
+        9) run_script "network.sh" ;;
         0) echo "退出。"; exit 0 ;;
         *) echo -e "${RED}无效输入，请重新选择。${PLAIN}"; sleep 1; main_menu ;;
     esac
