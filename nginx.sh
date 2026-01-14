@@ -371,6 +371,8 @@ server {
     ssl_certificate     $CERT_PATH;
     ssl_certificate_key $KEY_PATH;
 
+    client_max_body_size 0;
+
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
 
