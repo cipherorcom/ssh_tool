@@ -167,6 +167,7 @@ main_menu() {
         echo -e "${GREEN}7.${PLAIN} Zsh一键安装 (zsh.sh)"
         echo -e "${GREEN}8.${PLAIN} Docker 管理 (安装/配置加速)" 
         echo -e "${GREEN}9.${PLAIN} 出站优先级管理脚本 (network.sh)"
+        echo -e "${GREEN}10.${PLAIN} UFW管理 (ufw.sh)"
         echo -e "${BLUE}================================================${PLAIN}"
         echo -e "${YELLOW}0.${PLAIN} 退出脚本"
         echo ""
@@ -182,6 +183,7 @@ main_menu() {
             7) run_script "zsh.sh" ;;
             8) docker_menu ;; 
             9) run_script "network.sh" ;;
+            10) run_script "ufw.sh" ;;
             0) echo "退出。"; exit 0 ;;
             *) echo -e "${RED}无效输入，请重新选择。${PLAIN}"; sleep 1 ;;
         esac
