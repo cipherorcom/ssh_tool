@@ -168,10 +168,11 @@ main_menu() {
         echo -e "${GREEN}8.${PLAIN} Docker 管理 (安装/配置加速)" 
         echo -e "${GREEN}9.${PLAIN} 出站优先级管理脚本 (network.sh)"
         echo -e "${GREEN}10.${PLAIN} UFW管理 (ufw.sh)"
+        echo -e "${GREEN}11.${PLAIN} Fail2ban管理 (fail2ban.sh)"
         echo -e "${BLUE}================================================${PLAIN}"
         echo -e "${YELLOW}0.${PLAIN} 退出脚本"
         echo ""
-        read -p "请输入选项数字 [0-9]: " choice
+        read -p "请输入选项数字 [0-11]: " choice
 
         case $choice in
             1) run_script "swap.sh" ;;
@@ -184,6 +185,7 @@ main_menu() {
             8) docker_menu ;; 
             9) run_script "network.sh" ;;
             10) run_script "ufw.sh" ;;
+            11) run_script "fail2ban.sh" ;;
             0) echo "退出。"; exit 0 ;;
             *) echo -e "${RED}无效输入，请重新选择。${PLAIN}"; sleep 1 ;;
         esac
