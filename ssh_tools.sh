@@ -149,6 +149,42 @@ docker_menu() {
     done
 }
 
+install_bt_panel() {
+    clear
+    echo "=================================="
+    echo "        安装宝塔面板"
+    echo "=================================="
+
+    # 1) 先判断是否已安装（通过 bt 命令）
+    if command -v bt >/dev/null 2>&1; then
+        echo "检测到宝塔已安装（bt 命令存在）：$(command -v bt)"
+        echo "如需管理可直接执行：bt"
+        read -n 1 -s -r -p "按任意键返回主菜单..."
+        return 0
+    fi
+
+    # 有些环境 bt 在固定路径，额外兜底
+    if [ -x /usr/bin/bt ] || [ -x /usr/local/bin/bt ]; then
+        echo "检测到宝塔已安装（bt 脚本存在）"
+        echo "如需管理可直接执行：bt"
+        read -n 1 -s -r -p "按任意键返回主菜单..."
+        return 0
+    fi
+
+    # 2) 未安装则询问后安装
+    read -rp "未检测到宝塔，是否现在安装？(y/n): " confirm
+    case "$confirm" in
+        y|Y )
+            wget -O install.sh https://bt.cxinyun.com/install/install_panel.sh && bash install.sh
+            ;;
+        * )
+            echo "已取消安装"
+            ;;
+    esac
+
+    read -n 1 -s -r -p "按任意键返回主菜单..."
+}
+
 # ==================================================
 # 主菜单
 # ==================================================
@@ -169,6 +205,7 @@ main_menu() {
         echo -e "${GREEN}9.${PLAIN} 出站优先级管理脚本 (network.sh)"
         echo -e "${GREEN}10.${PLAIN} UFW管理 (ufw.sh)"
         echo -e "${GREEN}11.${PLAIN} Fail2ban管理 (fail2ban.sh)"
+        echo -e "${GREEN}12.${PLAIN} 安装宝塔 (Ubuntu/Debian)"
         echo -e "${BLUE}================================================${PLAIN}"
         echo -e "${YELLOW}0.${PLAIN} 退出脚本"
         echo ""
@@ -186,6 +223,7 @@ main_menu() {
             9) run_script "network.sh" ;;
             10) run_script "ufw.sh" ;;
             11) run_script "fail2ban.sh" ;;
+            12) install_bt_panel ;;
             0) echo "退出。"; exit 0 ;;
             *) echo -e "${RED}无效输入，请重新选择。${PLAIN}"; sleep 1 ;;
         esac
