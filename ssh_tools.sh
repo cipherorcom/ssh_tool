@@ -12,6 +12,11 @@ BRANCH="main"
 # 基础下载链接构造
 BASE_URL="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${BRANCH}"
 
+# 本地安装路径（用于快捷命令）
+INSTALL_DIR="/usr/local/share/ssh-tools"
+INSTALL_SCRIPT_PATH="${INSTALL_DIR}/ssh_tools.sh"
+SHORTCUT_PATH="/usr/local/bin/ssh-tools"
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -185,6 +190,267 @@ install_bt_panel() {
     read -n 1 -s -r -p "按任意键返回主菜单..."
 }
 
+# 自动保存脚本并创建快捷命令 ssh-tools
+ensure_shortcut_command() {
+    # 仅 root 可写系统目录；非 root 时静默跳过
+    if [[ $EUID -ne 0 ]]; then
+        return 0
+    fi
+
+    mkdir -p "$INSTALL_DIR"
+
+    # 优先从仓库拉取最新版；失败则用当前脚本兜底
+    if ! curl -fsSL "${BASE_URL}/ssh_tools.sh" -o "$INSTALL_SCRIPT_PATH"; then
+        if [[ -n "$0" && -f "$0" ]]; then
+            cp -f "$0" "$INSTALL_SCRIPT_PATH" 2>/dev/null || return 0
+        else
+            return 0
+        fi
+    fi
+
+    chmod +x "$INSTALL_SCRIPT_PATH"
+
+    cat > "$SHORTCUT_PATH" <<EOF
+#!/bin/bash
+bash "$INSTALL_SCRIPT_PATH" "\$@"
+EOF
+    chmod +x "$SHORTCUT_PATH"
+}
+
+run_ecs_benchmark() {
+    clear
+    echo -e "${BLUE}================================================${PLAIN}"
+    echo -e "${BLUE}         融合怪测评脚本 (ecs.sh)               ${PLAIN}"
+    echo -e "${BLUE}================================================${PLAIN}"
+    echo -e "${GREEN}正在下载并执行 ecs.sh ...${PLAIN}"
+
+    curl -L "https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh" -o ecs.sh
+
+    if [ $? -eq 0 ]; then
+        chmod +x ecs.sh
+        bash ecs.sh
+        rm -f ecs.sh
+    else
+        echo -e "${RED}下载失败，请检查网络或链接可用性。${PLAIN}"
+    fi
+
+    echo ""
+    read -n 1 -s -r -p "按任意键继续..."
+}
+
+run_nodequality_benchmark() {
+    clear
+    echo -e "${BLUE}================================================${PLAIN}"
+    echo -e "${BLUE}       NodeQuality 测评脚本                     ${PLAIN}"
+    echo -e "${BLUE}================================================${PLAIN}"
+    echo -e "${GREEN}正在执行 NodeQuality 测评脚本...${PLAIN}"
+
+    bash <(curl -sL https://run.NodeQuality.com)
+
+    echo ""
+    read -n 1 -s -r -p "按任意键继续..."
+}
+
+# ==================================================
+# 分组子菜单
+# ==================================================
+
+system_menu() {
+    while true; do
+        clear
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${BLUE}              系统基础菜单                      ${PLAIN}"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${GREEN}1.${PLAIN} swap管理 (swap.sh)"
+        echo -e "${GREEN}2.${PLAIN} zram管理 (zram.sh)"
+        echo -e "${GREEN}3.${PLAIN} Zsh一键安装 (zsh.sh)"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${YELLOW}0.${PLAIN} 返回主菜单"
+        echo ""
+        read -p "请输入选项 [0-3]: " sub_choice
+
+        case $sub_choice in
+            1) run_script "swap.sh" ;;
+            2) run_script "zram.sh" ;;
+            3) run_script "zsh.sh" ;;
+            0) return ;;
+            *) echo -e "${RED}无效输入${PLAIN}"; sleep 1 ;;
+        esac
+    done
+}
+
+security_menu() {
+    while true; do
+        clear
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${BLUE}           SSH/网络与安全菜单                   ${PLAIN}"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${GREEN}1.${PLAIN} 修改SSH端口及密码 (change_ssh.sh)"
+        echo -e "${GREEN}2.${PLAIN} 出站优先级管理脚本 (network.sh)"
+        echo -e "${GREEN}3.${PLAIN} UFW管理 (ufw.sh)"
+        echo -e "${GREEN}4.${PLAIN} Fail2ban管理 (fail2ban.sh)"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${YELLOW}0.${PLAIN} 返回主菜单"
+        echo ""
+        read -p "请输入选项 [0-4]: " sub_choice
+
+        case $sub_choice in
+            1) run_script "change_ssh.sh" ;;
+            2) run_script "network.sh" ;;
+            3) run_script "ufw.sh" ;;
+            4) run_script "fail2ban.sh" ;;
+            0) return ;;
+            *) echo -e "${RED}无效输入${PLAIN}"; sleep 1 ;;
+        esac
+    done
+}
+
+service_menu() {
+    while true; do
+        clear
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${BLUE}              服务与面板菜单                    ${PLAIN}"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${GREEN}1.${PLAIN} Nginx管理 (nginx.sh)"
+        echo -e "${GREEN}2.${PLAIN} frps管理 (frps.sh)"
+        echo -e "${GREEN}3.${PLAIN} frpc管理 (frpc.sh)"
+        echo -e "${GREEN}4.${PLAIN} Sing-box四合一 (sb.sh)"
+        echo -e "${GREEN}5.${PLAIN} Docker 管理 (安装/配置加速)"
+        echo -e "${GREEN}6.${PLAIN} 安装宝塔 (Ubuntu/Debian)"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${YELLOW}0.${PLAIN} 返回主菜单"
+        echo ""
+        read -p "请输入选项 [0-6]: " sub_choice
+
+        case $sub_choice in
+            1) run_script "nginx.sh" ;;
+            2) run_script "frps.sh" ;;
+            3) run_script "frpc.sh" ;;
+            4) run_script "sb.sh" ;;
+            5) docker_menu ;;
+            6) install_bt_panel ;;
+            0) return ;;
+            *) echo -e "${RED}无效输入${PLAIN}"; sleep 1 ;;
+        esac
+    done
+}
+
+benchmark_menu() {
+    while true; do
+        clear
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${BLUE}               性能测评菜单                     ${PLAIN}"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${GREEN}1.${PLAIN} 融合怪测评脚本 (ecs.sh)"
+        echo -e "${GREEN}2.${PLAIN} NodeQuality 测评脚本"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${YELLOW}0.${PLAIN} 返回主菜单"
+        echo ""
+        read -p "请输入选项 [0-2]: " sub_choice
+
+        case $sub_choice in
+            1) run_ecs_benchmark ;;
+            2) run_nodequality_benchmark ;;
+            0) return ;;
+            *) echo -e "${RED}无效输入${PLAIN}"; sleep 1 ;;
+        esac
+    done
+}
+
+search_menu() {
+    while true; do
+        clear
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${BLUE}                 一键搜索脚本                   ${PLAIN}"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo "支持关键词示例: ssh / nginx / docker / 测评 / bbr"
+        echo ""
+        read -rp "请输入关键词（直接回车返回）: " keyword
+
+        [[ -z "$keyword" ]] && return
+
+        local items=(
+            "swap管理|swap.sh|run_script:swap.sh"
+            "修改SSH端口及密码|change_ssh.sh|run_script:change_ssh.sh"
+            "Nginx管理|nginx.sh|run_script:nginx.sh"
+            "frps管理|frps.sh|run_script:frps.sh"
+            "frpc管理|frpc.sh|run_script:frpc.sh"
+            "zram管理|zram.sh|run_script:zram.sh"
+            "Sing-box四合一|sb.sh|run_script:sb.sh"
+            "Zsh一键安装|zsh.sh|run_script:zsh.sh"
+            "Docker管理|docker_menu|func:docker_menu"
+            "出站优先级管理|network.sh|run_script:network.sh"
+            "UFW管理|ufw.sh|run_script:ufw.sh"
+            "Fail2ban管理|fail2ban.sh|run_script:fail2ban.sh"
+            "安装宝塔|bt_panel|func:install_bt_panel"
+            "融合怪测评|ecs.sh|func:run_ecs_benchmark"
+            "NodeQuality测评|NodeQuality|func:run_nodequality_benchmark"
+            "BBR调优|bbr.sh|run_script:bbr.sh"
+        )
+
+        local match_indexes=()
+        local i=0
+        local item name target action lower_item lower_keyword
+        lower_keyword=$(echo "$keyword" | tr '[:upper:]' '[:lower:]')
+
+        for item in "${items[@]}"; do
+            name=${item%%|*}
+            target=${item#*|}; target=${target%%|*}
+            action=${item##*|}
+
+            lower_item=$(echo "${name} ${target}" | tr '[:upper:]' '[:lower:]')
+            if [[ "$lower_item" == *"$lower_keyword"* ]] || [[ "${name}${target}" == *"$keyword"* ]]; then
+                match_indexes+=("$i")
+            fi
+            ((i++))
+        done
+
+        if [[ ${#match_indexes[@]} -eq 0 ]]; then
+            echo ""
+            echo -e "${YELLOW}未找到匹配项，请换个关键词重试。${PLAIN}"
+            read -n 1 -s -r -p "按任意键继续..."
+            continue
+        fi
+
+        echo ""
+        echo -e "${GREEN}匹配结果：${PLAIN}"
+        local n=1 idx
+        for idx in "${match_indexes[@]}"; do
+            item=${items[$idx]}
+            name=${item%%|*}
+            target=${item#*|}; target=${target%%|*}
+            echo -e "${GREEN}${n}.${PLAIN} ${name} (${target})"
+            ((n++))
+        done
+        echo -e "${YELLOW}0.${PLAIN} 重新搜索"
+        echo ""
+
+        read -rp "请选择要执行的脚本: " pick
+        if [[ "$pick" == "0" ]]; then
+            continue
+        fi
+
+        if ! [[ "$pick" =~ ^[0-9]+$ ]] || (( pick < 1 || pick > ${#match_indexes[@]} )); then
+            echo -e "${RED}无效输入${PLAIN}"
+            sleep 1
+            continue
+        fi
+
+        idx=${match_indexes[$((pick-1))]}
+        item=${items[$idx]}
+        action=${item##*|}
+
+        if [[ "$action" == run_script:* ]]; then
+            run_script "${action#run_script:}"
+        elif [[ "$action" == func:* ]]; then
+            "${action#func:}"
+        else
+            echo -e "${RED}内部错误：未知动作${PLAIN}"
+            sleep 1
+        fi
+    done
+}
+
 # ==================================================
 # 主菜单
 # ==================================================
@@ -194,36 +460,22 @@ main_menu() {
         echo -e "${BLUE}================================================${PLAIN}"
         echo -e "${BLUE}    SSH Tool 综合管理脚本 (仓库: ${GITHUB_USER}) ${PLAIN}"
         echo -e "${BLUE}================================================${PLAIN}"
-        echo -e "${GREEN}1.${PLAIN} swap管理 (swap.sh)"
-        echo -e "${GREEN}2.${PLAIN} 修改SSH端口及密码 (change_ssh.sh)"
-        echo -e "${GREEN}3.${PLAIN} Nginx管理 (nginx.sh)"
-        echo -e "${GREEN}4.${PLAIN} frps管理 (frps.sh)"
-        echo -e "${GREEN}5.${PLAIN} zram管理 (zram.sh)"
-        echo -e "${GREEN}6.${PLAIN} Sing-box四合一 (sb.sh)"
-        echo -e "${GREEN}7.${PLAIN} Zsh一键安装 (zsh.sh)"
-        echo -e "${GREEN}8.${PLAIN} Docker 管理 (安装/配置加速)" 
-        echo -e "${GREEN}9.${PLAIN} 出站优先级管理脚本 (network.sh)"
-        echo -e "${GREEN}10.${PLAIN} UFW管理 (ufw.sh)"
-        echo -e "${GREEN}11.${PLAIN} Fail2ban管理 (fail2ban.sh)"
-        echo -e "${GREEN}12.${PLAIN} 安装宝塔 (Ubuntu/Debian)"
+        echo -e "${GREEN}1.${PLAIN} 系统基础"
+        echo -e "${GREEN}2.${PLAIN} SSH/网络与安全"
+        echo -e "${GREEN}3.${PLAIN} 服务与面板"
+        echo -e "${GREEN}4.${PLAIN} 性能测评"
+        echo -e "${GREEN}5.${PLAIN} 一键搜索脚本"
         echo -e "${BLUE}================================================${PLAIN}"
         echo -e "${YELLOW}0.${PLAIN} 退出脚本"
         echo ""
-        read -p "请输入选项数字 [0-11]: " choice
+        read -p "请输入选项 [0-5]: " choice
 
         case $choice in
-            1) run_script "swap.sh" ;;
-            2) run_script "change_ssh.sh" ;;
-            3) run_script "nginx.sh" ;;
-            4) run_script "frps.sh" ;;
-            5) run_script "zram.sh" ;;
-            6) run_script "sb.sh" ;;
-            7) run_script "zsh.sh" ;;
-            8) docker_menu ;; 
-            9) run_script "network.sh" ;;
-            10) run_script "ufw.sh" ;;
-            11) run_script "fail2ban.sh" ;;
-            12) install_bt_panel ;;
+            1) system_menu ;;
+            2) security_menu ;;
+            3) service_menu ;;
+            4) benchmark_menu ;;
+            5) search_menu ;;
             0) echo "退出。"; exit 0 ;;
             *) echo -e "${RED}无效输入，请重新选择。${PLAIN}"; sleep 1 ;;
         esac
@@ -234,4 +486,5 @@ main_menu() {
 # 脚本入口
 # ==================================================
 check_dependencies
+ensure_shortcut_command
 main_menu

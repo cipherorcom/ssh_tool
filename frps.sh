@@ -200,6 +200,62 @@ show_config() {
     echo -e "要查看完整配置，请运行: ${YELLOW}cat $FRPS_CONFIG_PATH${NC}"
 }
 
+# 任务：修改当前配置
+do_edit_config() {
+    if ! check_if_installed; then
+        echo -e "${RED}错误: frps 未安装，无法修改配置。${NC}"
+        return
+    fi
+
+    if [ ! -f "$FRPS_CONFIG_PATH" ]; then
+        echo -e "${RED}错误: 配置文件不存在: $FRPS_CONFIG_PATH${NC}"
+        return
+    fi
+
+    local current_server_port current_token current_dashboard_port current_dashboard_user current_dashboard_pwd
+    current_server_port=$(grep "^bindPort" "$FRPS_CONFIG_PATH" | sed 's/.*= //' | tr -d ' ')
+    current_token=$(grep "^auth.token" "$FRPS_CONFIG_PATH" | sed 's/.*= "//' | sed 's/"//')
+    current_dashboard_port=$(grep "^webServer.port" "$FRPS_CONFIG_PATH" | sed 's/.*= //' | tr -d ' ')
+    current_dashboard_user=$(grep "^webServer.user" "$FRPS_CONFIG_PATH" | sed 's/.*= "//' | sed 's/"//')
+    current_dashboard_pwd=$(grep "^webServer.password" "$FRPS_CONFIG_PATH" | sed 's/.*= "//' | sed 's/"//')
+
+    read -p "请输入 frps 服务端口 [当前: ${current_server_port}]: " SERVER_PORT
+    SERVER_PORT=${SERVER_PORT:-$current_server_port}
+    read -p "请输入认证令牌 (token) [当前: ${current_token}]: " TOKEN
+    TOKEN=${TOKEN:-$current_token}
+    read -p "请输入 Dashboard 端口 [当前: ${current_dashboard_port}]: " DASHBOARD_PORT
+    DASHBOARD_PORT=${DASHBOARD_PORT:-$current_dashboard_port}
+    read -p "请输入 Dashboard 用户名 [当前: ${current_dashboard_user}]: " DASHBOARD_USER
+    DASHBOARD_USER=${DASHBOARD_USER:-$current_dashboard_user}
+    read -p "请输入 Dashboard 密码 [当前: ${current_dashboard_pwd}]: " DASHBOARD_PWD
+    DASHBOARD_PWD=${DASHBOARD_PWD:-$current_dashboard_pwd}
+
+    cp -a "$FRPS_CONFIG_PATH" "${FRPS_CONFIG_PATH}.bak.$(date +%Y%m%d%H%M%S)"
+
+    sed -i -E "s|^bindPort\s*=.*$|bindPort = ${SERVER_PORT}|" "$FRPS_CONFIG_PATH"
+    sed -i -E "s|^auth\.token\s*=.*$|auth.token = \"${TOKEN}\"|" "$FRPS_CONFIG_PATH"
+    sed -i -E "s|^webServer\.port\s*=.*$|webServer.port = ${DASHBOARD_PORT}|" "$FRPS_CONFIG_PATH"
+    sed -i -E "s|^webServer\.user\s*=.*$|webServer.user = \"${DASHBOARD_USER}\"|" "$FRPS_CONFIG_PATH"
+    sed -i -E "s|^webServer\.password\s*=.*$|webServer.password = \"${DASHBOARD_PWD}\"|" "$FRPS_CONFIG_PATH"
+
+    echo "正在配置防火墙端口..."
+    PORTS_TO_OPEN=($SERVER_PORT $DASHBOARD_PORT)
+    if command -v firewall-cmd &>/dev/null; then
+        for port in "${PORTS_TO_OPEN[@]}"; do firewall-cmd --permanent --add-port=${port}/tcp >/dev/null 2>&1; done
+        firewall-cmd --reload >/dev/null 2>&1
+    elif command -v ufw &>/dev/null; then
+        for port in "${PORTS_TO_OPEN[@]}"; do ufw allow ${port}/tcp >/dev/null 2>&1; done
+        ufw reload >/dev/null 2>&1
+    fi
+
+    systemctl restart frps
+    if [ $? -eq 0 ]; then
+        echo -e "${GREEN}配置已更新并重启 frps 成功。${NC}"
+    else
+        echo -e "${RED}配置已写入，但重启 frps 失败，请检查配置和日志。${NC}"
+    fi
+}
+
 # --- 管理菜单 ---
 show_manage_menu() {
     while true; do
@@ -213,9 +269,10 @@ show_manage_menu() {
         echo " 4. 查看 frps 状态"
         echo " 5. 查看实时日志"
         echo " 6. 查看当前配置"
+        echo " 7. 修改当前配置"
         echo " 0. 返回主菜单"
         echo "-----------------------"
-        read -p "请输入选项 [0-6]: " choice
+        read -p "请输入选项 [0-7]: " choice
 
         case $choice in
             1) systemctl start frps && echo -e "${GREEN}服务已启动。${NC}" ;;
@@ -224,6 +281,7 @@ show_manage_menu() {
             4) systemctl status frps ;;
             5) journalctl -u frps -f ;;
             6) show_config ;;
+            7) do_edit_config ;;
             0) return ;;
             *) echo -e "${RED}无效选项，请重试。${NC}" ;;
         esac
