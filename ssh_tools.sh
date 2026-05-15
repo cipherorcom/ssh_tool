@@ -11,6 +11,8 @@ BRANCH="main"
 
 # 基础下载链接构造
 BASE_URL="https://raw.githubusercontent.com/${GITHUB_USER}/${REPO_NAME}/${BRANCH}"
+GITHUB_PROXY=""
+export GITHUB_PROXY
 
 # 本地安装路径（用于快捷命令）
 INSTALL_DIR="/usr/local/share/ssh-tools"
@@ -60,9 +62,11 @@ check_dependencies() {
 # 下载并执行脚本的函数
 run_script() {
     local script_name=$1
+    local download_url
     echo -e "${GREEN}正在从仓库获取 ${script_name} ...${PLAIN}"
-    
-    wget -O "$script_name" "${BASE_URL}/${script_name}"
+
+    download_url="$(build_raw_url "$script_name")"
+    wget -O "$script_name" "$download_url"
 
     if [ $? -eq 0 ]; then
         echo -e "${GREEN}下载成功，正在执行...${PLAIN}"
@@ -80,6 +84,68 @@ run_script() {
     # 执行完暂停
     echo ""
     read -n 1 -s -r -p "按任意键继续..."
+}
+
+build_raw_url() {
+    local script_name=$1
+    local raw_url="${BASE_URL}/${script_name}"
+
+    if [[ -n "$GITHUB_PROXY" ]]; then
+        local proxy_prefix="${GITHUB_PROXY%/}"
+        echo "${proxy_prefix}/${raw_url}"
+    else
+        echo "$raw_url"
+    fi
+}
+
+configure_github_proxy() {
+    while true; do
+        clear
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${BLUE}              GitHub 代理设置                   ${PLAIN}"
+        echo -e "${BLUE}================================================${PLAIN}"
+        if [[ -n "$GITHUB_PROXY" ]]; then
+            echo -e "当前代理前缀: ${GREEN}${GITHUB_PROXY}${PLAIN}"
+            echo -e "示例地址: ${GREEN}${GITHUB_PROXY%/}/https://raw.githubusercontent.com/...${PLAIN}"
+        else
+            echo -e "当前代理前缀: ${YELLOW}未启用（直连 GitHub）${PLAIN}"
+        fi
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${GREEN}1.${PLAIN} 设置/修改代理前缀"
+        echo -e "${GREEN}2.${PLAIN} 清除代理（恢复直连）"
+        echo -e "${YELLOW}0.${PLAIN} 返回主菜单"
+        echo ""
+        read -p "请输入选项 [0-2]: " proxy_choice
+
+        case $proxy_choice in
+            1)
+                read -rp "请输入代理前缀（示例: https://ghproxy.com）: " input_proxy
+                if [[ -z "$input_proxy" ]]; then
+                    echo -e "${RED}输入为空，未修改。${PLAIN}"
+                elif [[ "$input_proxy" =~ ^https?:// ]]; then
+                    GITHUB_PROXY="${input_proxy%/}"
+                    export GITHUB_PROXY
+                    echo -e "${GREEN}代理已设置为: ${GITHUB_PROXY}${PLAIN}"
+                else
+                    echo -e "${RED}格式错误：必须以 http:// 或 https:// 开头。${PLAIN}"
+                fi
+                read -n 1 -s -r -p "按任意键继续..."
+                ;;
+            2)
+                GITHUB_PROXY=""
+                export GITHUB_PROXY
+                echo -e "${GREEN}已清除代理，恢复直连。${PLAIN}"
+                read -n 1 -s -r -p "按任意键继续..."
+                ;;
+            0)
+                return
+                ;;
+            *)
+                echo -e "${RED}无效输入${PLAIN}"
+                sleep 1
+                ;;
+        esac
+    done
 }
 
 # ==================================================
@@ -200,7 +266,7 @@ ensure_shortcut_command() {
     mkdir -p "$INSTALL_DIR"
 
     # 优先从仓库拉取最新版；失败则用当前脚本兜底
-    if ! curl -fsSL "${BASE_URL}/ssh_tools.sh" -o "$INSTALL_SCRIPT_PATH"; then
+    if ! curl -fsSL "$(build_raw_url "ssh_tools.sh")" -o "$INSTALL_SCRIPT_PATH"; then
         if [[ -n "$0" && -f "$0" ]]; then
             cp -f "$0" "$INSTALL_SCRIPT_PATH" 2>/dev/null || return 0
         else
@@ -465,10 +531,11 @@ main_menu() {
         echo -e "${GREEN}3.${PLAIN} 服务与面板"
         echo -e "${GREEN}4.${PLAIN} 性能测评"
         echo -e "${GREEN}5.${PLAIN} 一键搜索脚本"
+        echo -e "${GREEN}6.${PLAIN} GitHub 代理设置"
         echo -e "${BLUE}================================================${PLAIN}"
         echo -e "${YELLOW}0.${PLAIN} 退出脚本"
         echo ""
-        read -p "请输入选项 [0-5]: " choice
+        read -p "请输入选项 [0-6]: " choice
 
         case $choice in
             1) system_menu ;;
@@ -476,6 +543,7 @@ main_menu() {
             3) service_menu ;;
             4) benchmark_menu ;;
             5) search_menu ;;
+            6) configure_github_proxy ;;
             0) echo "退出。"; exit 0 ;;
             *) echo -e "${RED}无效输入，请重新选择。${PLAIN}"; sleep 1 ;;
         esac

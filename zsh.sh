@@ -7,6 +7,16 @@
 # 如果任何命令失败，立即退出脚本
 set -e
 
+build_url() {
+  local url="$1"
+  if [ -n "$GITHUB_PROXY" ]; then
+    local proxy_prefix="${GITHUB_PROXY%/}"
+    printf "%s/%s" "$proxy_prefix" "$url"
+  else
+    printf "%s" "$url"
+  fi
+}
+
 # 1. 安装依赖包
 echo "Updating packages and installing dependencies (curl, wget, unzip, vim, zip, git, zsh)..."
 apt update
@@ -18,14 +28,14 @@ echo "Installing Oh My Zsh..."
 # 设置 CHSH=no 来防止它尝试更改默认 shell（这通常需要交互式输入密码）
 export RUNZSH=no
 export CHSH=no
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
+sh -c "$(curl -fsSL "$(build_url "https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh")")" "" --unattended
 
 # 3. 安装 Powerlevel10k 主题
 echo "Installing Powerlevel10k theme..."
 # 定义 ZSH_CUSTOM 目录，默认为 $HOME/.oh-my-zsh/custom
 ZSH_CUSTOM_DIR="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
 
-git clone --depth=1 https://github.com/romkatv/powerlevel10k.git \
+git clone --depth=1 "$(build_url "https://github.com/romkatv/powerlevel10k.git")" \
   "$ZSH_CUSTOM_DIR/themes/powerlevel10k"
       
 # 4. 在 .zshrc 中设置主题
@@ -34,11 +44,11 @@ sed -i 's/^ZSH_THEME=".*"/ZSH_THEME="powerlevel10k\/powerlevel10k"/' "$HOME/.zsh
 
 # 5. 安装插件 (修正了原脚本的安装路径和激活方式)
 echo "Installing zsh-autosuggestions (command auto-suggestion)..."
-git clone https://github.com/zsh-users/zsh-autosuggestions \
+git clone "$(build_url "https://github.com/zsh-users/zsh-autosuggestions")" \
   "$ZSH_CUSTOM_DIR/plugins/zsh-autosuggestions"
       
 echo "Installing zsh-syntax-highlighting (command syntax highlighting)..."
-git clone https://github.com/zsh-users/zsh-syntax-highlighting.git \
+git clone "$(build_url "https://github.com/zsh-users/zsh-syntax-highlighting.git")" \
   "$ZSH_CUSTOM_DIR/plugins/zsh-syntax-highlighting"
       
 # 6. 在 .zshrc 中激活插件

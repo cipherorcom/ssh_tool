@@ -24,6 +24,16 @@ YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+build_url() {
+    local url="$1"
+    if [[ -n "$GITHUB_PROXY" ]]; then
+        local proxy_prefix="${GITHUB_PROXY%/}"
+        echo "${proxy_prefix}/${url}"
+    else
+        echo "$url"
+    fi
+}
+
 # --- 检查和准备工作 ---
 
 # 检查是否以 root 权限运行
@@ -54,7 +64,7 @@ do_install() {
 
     # --- 交互式获取配置 ---
     echo -e "${BLUE}--- 开始安装 frps (精简版) ---${NC}"
-    LATEST_VERSION=$(curl -s https://api.github.com/repos/fatedier/frp/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    LATEST_VERSION=$(curl -s "$(build_url "https://api.github.com/repos/fatedier/frp/releases/latest")" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
     read -p "请输入要安装的 frp 版本 (直接回车使用最新版: $LATEST_VERSION): " USER_VERSION
     FRP_VERSION=${USER_VERSION:-$LATEST_VERSION}
     read -p "请输入 frps 服务端口 [默认: 7000]: " SERVER_PORT
@@ -73,7 +83,7 @@ do_install() {
     # --- 开始执行安装 ---
     echo -e "${YELLOW}正在准备安装环境...${NC}"
     ARCH=$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
-    DOWNLOAD_URL="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_${ARCH}.tar.gz"
+    DOWNLOAD_URL=$(build_url "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_${ARCH}.tar.gz")
     TMP_FILE="/tmp/frp.tar.gz"
 
     echo "正在下载 frp v$FRP_VERSION..."
