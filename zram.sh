@@ -57,6 +57,13 @@ enable_zram() {
   read -rp "请输入压缩 swap 占用物理内存百分比 (建议 25~50)： " percent
   percent=${percent:-50}
 
+  percent=${percent%%%}
+  if ! [[ "$percent" =~ ^[0-9]+$ ]] || [ "$percent" -lt 1 ] || [ "$percent" -gt 100 ]; then
+    echo "❌ 百分比输入无效，请输入 1-100 的整数（例如 40）"
+    pause
+    return
+  fi
+
   echo "⚙️ 检查系统支持..."
   USE_GENERATOR=false
   USE_ZRAMSWAP=false
@@ -145,10 +152,33 @@ disable_zram() {
   echo "⚙️ 正在关闭 ZRAM..."
   swapoff -a || true
 
+  if command -v zramctl >/dev/null 2>&1; then
+    while read -r dev _; do
+      [ -n "$dev" ] || continue
+      swapoff "$dev" 2>/dev/null || true
+    done < <(zramctl 2>/dev/null | awk 'NR>1 {print $1}')
+  fi
+
   systemctl disable zramswap.service 2>/dev/null || true
   systemctl stop zramswap.service 2>/dev/null || true
   systemctl disable systemd-zram-setup@zram0.service 2>/dev/null || true
   systemctl stop systemd-zram-setup@zram0.service 2>/dev/null || true
+
+  if [ -d /sys/class/zram-control ] && [ -f /sys/class/zram-control/hot_remove ]; then
+    while read -r dev _; do
+      [ -n "$dev" ] || continue
+      idx=${dev#/dev/zram}
+      case "$idx" in
+        ''|*[!0-9]*) continue ;;
+      esac
+      echo "$idx" > /sys/class/zram-control/hot_remove 2>/dev/null || true
+    done < <(zramctl 2>/dev/null | awk 'NR>1 {print $1}')
+  fi
+
+  for reset_file in /sys/block/zram*/reset; do
+    [ -e "$reset_file" ] || continue
+    echo 1 > "$reset_file" 2>/dev/null || true
+  done
 
   rm -f "$ZRAM_CONF_SYSTEMD"
   rm -f "$ZRAM_CONF_DEFAULT"
