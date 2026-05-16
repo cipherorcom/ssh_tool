@@ -199,6 +199,7 @@ show_config() {
     TOKEN=$(grep "token" "$FRPS_CONFIG_PATH" | sed 's/.*= "//' | sed 's/"//')
     DASHBOARD_PORT=$(grep "webServer.port" "$FRPS_CONFIG_PATH" | sed 's/.*= //')
     DASHBOARD_USER=$(grep "webServer.user" "$FRPS_CONFIG_PATH" | sed 's/.*= "//' | sed 's/"//')
+    DASHBOARD_PWD=$(grep "webServer.password" "$FRPS_CONFIG_PATH" | sed 's/.*= "//' | sed 's/"//')
     
     echo -e "${BLUE}---------- frps 当前配置信息 ----------${NC}"
     echo -e "配置文件路径:   ${YELLOW}$FRPS_CONFIG_PATH${NC}"
@@ -206,6 +207,7 @@ show_config() {
     echo -e "认证令牌:       ${GREEN}$TOKEN${NC}"
     echo -e "Dashboard 端口:   ${GREEN}$DASHBOARD_PORT${NC}"
     echo -e "Dashboard 用户:   ${GREEN}$DASHBOARD_USER${NC}"
+    echo -e "Dashboard 密码:   ${GREEN}$DASHBOARD_PWD${NC}"
     echo -e "-------------------------------------------"
     echo -e "要查看完整配置，请运行: ${YELLOW}cat $FRPS_CONFIG_PATH${NC}"
 }

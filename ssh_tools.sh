@@ -18,6 +18,12 @@ export GITHUB_PROXY
 INSTALL_DIR="/usr/local/share/ssh-tools"
 INSTALL_SCRIPT_PATH="${INSTALL_DIR}/ssh_tools.sh"
 SHORTCUT_PATH="/usr/local/bin/ssh-tools"
+GLOBAL_CONFIG_DIR="/etc/ssh-tools"
+GLOBAL_CONFIG_FILE="${GLOBAL_CONFIG_DIR}/config"
+USER_CONFIG_DIR="${HOME}/.config/ssh-tools"
+USER_CONFIG_FILE="${USER_CONFIG_DIR}/config"
+GLOBAL_CACHE_DIR="/usr/local/share/ssh-tools/cache"
+USER_CACHE_DIR="${HOME}/.cache/ssh-tools/cache"
 
 # 颜色定义
 RED='\033[0;31m'
@@ -63,13 +69,34 @@ check_dependencies() {
 run_script() {
     local script_name=$1
     local download_url
+    local cache_dir
+    local cache_file
+    local downloaded=0
+
+    if [[ $EUID -eq 0 ]]; then
+        cache_dir="$GLOBAL_CACHE_DIR"
+    else
+        cache_dir="$USER_CACHE_DIR"
+    fi
+    cache_file="${cache_dir}/${script_name}"
+
     echo -e "${GREEN}正在从仓库获取 ${script_name} ...${PLAIN}"
 
     download_url="$(build_raw_url "$script_name")"
-    wget -O "$script_name" "$download_url"
+    if wget -O "$script_name" "$download_url"; then
+        downloaded=1
+        mkdir -p "$cache_dir"
+        cp -f "$script_name" "$cache_file" 2>/dev/null || true
+    elif [[ -f "$cache_file" ]]; then
+        echo -e "${YELLOW}远程获取失败，使用本地缓存: ${cache_file}${PLAIN}"
+        cp -f "$cache_file" "$script_name"
+    fi
 
-    if [ $? -eq 0 ]; then
+    if [[ -f "$script_name" ]]; then
         echo -e "${GREEN}下载成功，正在执行...${PLAIN}"
+        if [[ $downloaded -eq 1 ]]; then
+            echo -e "${GREEN}已更新本地缓存。${PLAIN}"
+        fi
         chmod +x "$script_name"
         ./"$script_name"
         
@@ -79,6 +106,7 @@ run_script() {
         echo -e "${RED}下载失败！请检查以下几点：${PLAIN}"
         echo "1. 仓库地址: https://github.com/${GITHUB_USER}/${REPO_NAME}"
         echo "2. 文件名 ${script_name} 是否存在"
+        echo "3. 本地缓存不存在: ${cache_file}"
     fi
     
     # 执行完暂停
@@ -96,6 +124,39 @@ build_raw_url() {
     else
         echo "$raw_url"
     fi
+}
+
+load_config() {
+    if [[ -f "$GLOBAL_CONFIG_FILE" ]]; then
+        # shellcheck disable=SC1090
+        source "$GLOBAL_CONFIG_FILE"
+    fi
+
+    if [[ -f "$USER_CONFIG_FILE" ]]; then
+        # shellcheck disable=SC1090
+        source "$USER_CONFIG_FILE"
+    fi
+
+    GITHUB_PROXY="${GITHUB_PROXY:-}"
+    export GITHUB_PROXY
+}
+
+save_config() {
+    local target_dir
+    local target_file
+
+    if [[ $EUID -eq 0 ]]; then
+        target_dir="$GLOBAL_CONFIG_DIR"
+        target_file="$GLOBAL_CONFIG_FILE"
+    else
+        target_dir="$USER_CONFIG_DIR"
+        target_file="$USER_CONFIG_FILE"
+    fi
+
+    mkdir -p "$target_dir"
+    cat > "$target_file" <<EOF
+GITHUB_PROXY="${GITHUB_PROXY}"
+EOF
 }
 
 configure_github_proxy() {
@@ -125,6 +186,7 @@ configure_github_proxy() {
                 elif [[ "$input_proxy" =~ ^https?:// ]]; then
                     GITHUB_PROXY="${input_proxy%/}"
                     export GITHUB_PROXY
+                    save_config
                     echo -e "${GREEN}代理已设置为: ${GITHUB_PROXY}${PLAIN}"
                 else
                     echo -e "${RED}格式错误：必须以 http:// 或 https:// 开头。${PLAIN}"
@@ -134,6 +196,7 @@ configure_github_proxy() {
             2)
                 GITHUB_PROXY=""
                 export GITHUB_PROXY
+                save_config
                 echo -e "${GREEN}已清除代理，恢复直连。${PLAIN}"
                 read -n 1 -s -r -p "按任意键继续..."
                 ;;
@@ -283,6 +346,71 @@ EOF
     chmod +x "$SHORTCUT_PATH"
 }
 
+remove_shortcut_command() {
+    clear
+    echo -e "${BLUE}================================================${PLAIN}"
+    echo -e "${BLUE}                 删除 ssh-tools                 ${PLAIN}"
+    echo -e "${BLUE}================================================${PLAIN}"
+
+    if [[ $EUID -ne 0 ]]; then
+        echo -e "${RED}需要 root 权限才能删除系统快捷命令。${PLAIN}"
+        echo -e "请使用 sudo 运行后再执行该操作。"
+        read -n 1 -s -r -p "按任意键返回主菜单..."
+        return
+    fi
+
+    local removed=0
+    if [[ -f "$SHORTCUT_PATH" ]]; then
+        rm -f "$SHORTCUT_PATH"
+        removed=1
+    fi
+
+    if [[ -f "$INSTALL_SCRIPT_PATH" ]]; then
+        rm -f "$INSTALL_SCRIPT_PATH"
+        removed=1
+    fi
+
+    if [[ -d "$INSTALL_DIR" ]] && [[ -z "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]]; then
+        rmdir "$INSTALL_DIR" 2>/dev/null || true
+    fi
+
+    if [[ -f "$GLOBAL_CONFIG_FILE" ]]; then
+        rm -f "$GLOBAL_CONFIG_FILE"
+        removed=1
+    fi
+
+    if [[ -f "$USER_CONFIG_FILE" ]]; then
+        rm -f "$USER_CONFIG_FILE"
+        removed=1
+    fi
+
+    if [[ -d "$GLOBAL_CACHE_DIR" ]]; then
+        rm -rf "$GLOBAL_CACHE_DIR"
+        removed=1
+    fi
+
+    if [[ -d "$USER_CACHE_DIR" ]]; then
+        rm -rf "$USER_CACHE_DIR"
+        removed=1
+    fi
+
+    if [[ -d "$GLOBAL_CONFIG_DIR" ]] && [[ -z "$(ls -A "$GLOBAL_CONFIG_DIR" 2>/dev/null)" ]]; then
+        rmdir "$GLOBAL_CONFIG_DIR" 2>/dev/null || true
+    fi
+
+    if [[ -d "$USER_CONFIG_DIR" ]] && [[ -z "$(ls -A "$USER_CONFIG_DIR" 2>/dev/null)" ]]; then
+        rmdir "$USER_CONFIG_DIR" 2>/dev/null || true
+    fi
+
+    if [[ $removed -eq 1 ]]; then
+        echo -e "${GREEN}已删除 ssh-tools（快捷命令/本地入口/代理配置）。${PLAIN}"
+    else
+        echo -e "${YELLOW}未检测到可删除的 ssh-tools 文件。${PLAIN}"
+    fi
+
+    read -n 1 -s -r -p "按任意键返回主菜单..."
+}
+
 run_ecs_benchmark() {
     clear
     echo -e "${BLUE}================================================${PLAIN}"
@@ -317,6 +445,104 @@ run_nodequality_benchmark() {
     read -n 1 -s -r -p "按任意键继续..."
 }
 
+recommended_memory_mode() {
+    clear
+    local mem_kb mem_gb virt_type zram_supported rec_plan
+
+    mem_kb=$(awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null)
+    if [[ -z "$mem_kb" || ! "$mem_kb" =~ ^[0-9]+$ ]]; then
+        echo -e "${RED}无法检测内存信息，建议手动选择 swap 或 zram。${PLAIN}"
+        read -n 1 -s -r -p "按任意键返回..."
+        return
+    fi
+
+    mem_gb=$(( (mem_kb + 1024*1024 - 1) / (1024*1024) ))
+    virt_type="unknown"
+    if command -v systemd-detect-virt >/dev/null 2>&1; then
+        virt_type=$(systemd-detect-virt 2>/dev/null || echo "unknown")
+    fi
+
+    zram_supported=0
+    if command -v modprobe >/dev/null 2>&1 && modprobe -n zram >/dev/null 2>&1; then
+        zram_supported=1
+    elif systemctl list-unit-files 2>/dev/null | grep -qE 'systemd-zram-setup@|zramswap.service'; then
+        zram_supported=1
+    elif [[ -e /dev/zram0 ]]; then
+        zram_supported=1
+    fi
+
+    if [[ "$virt_type" == "openvz" ]] || [[ $zram_supported -eq 0 ]]; then
+        rec_plan="swap"
+    elif (( mem_gb <= 2 )); then
+        rec_plan="zram_plus_swap"
+    elif (( mem_gb <= 8 )); then
+        rec_plan="zram"
+    else
+        rec_plan="small_swap_or_none"
+    fi
+
+    echo -e "${BLUE}================================================${PLAIN}"
+    echo -e "${BLUE}               内存交换推荐模式                 ${PLAIN}"
+    echo -e "${BLUE}================================================${PLAIN}"
+    echo -e "检测结果: 内存 ${GREEN}${mem_gb} GB${PLAIN}, 虚拟化 ${GREEN}${virt_type}${PLAIN}, zram支持 ${GREEN}${zram_supported}${PLAIN}"
+    echo ""
+
+    case "$rec_plan" in
+        zram_plus_swap)
+            echo -e "推荐方案: ${GREEN}先启用 zram，再配置少量 swap（1-2GB）兜底${PLAIN}"
+            echo -e "建议参数: ${GREEN}zram=内存的 40%~50%，swap=1024M~2048M${PLAIN}"
+            echo -e "${GREEN}1.${PLAIN} 先执行 zram 管理"
+            echo -e "${GREEN}2.${PLAIN} 再执行 swap 管理"
+            echo -e "${YELLOW}0.${PLAIN} 返回"
+            read -p "请输入选项 [0-2]: " choose
+            case $choose in
+                1) run_script "zram.sh" ;;
+                2) run_script "swap.sh" ;;
+                *) ;;
+            esac
+            ;;
+        zram)
+            echo -e "推荐方案: ${GREEN}优先使用 zram（性能更好）${PLAIN}"
+            echo -e "建议参数: ${GREEN}zram=内存的 25%~50%（常用 40%）${PLAIN}"
+            echo -e "${GREEN}1.${PLAIN} 执行 zram 管理"
+            echo -e "${GREEN}2.${PLAIN} 改为执行 swap 管理"
+            echo -e "${YELLOW}0.${PLAIN} 返回"
+            read -p "请输入选项 [0-2]: " choose
+            case $choose in
+                1) run_script "zram.sh" ;;
+                2) run_script "swap.sh" ;;
+                *) ;;
+            esac
+            ;;
+        small_swap_or_none)
+            echo -e "推荐方案: ${GREEN}大内存机器，按需配置少量 swap 或不配置${PLAIN}"
+            echo -e "建议参数: ${GREEN}swap=1024M~2048M（若业务稳定可不配置）${PLAIN}"
+            echo -e "${GREEN}1.${PLAIN} 执行 swap 管理"
+            echo -e "${GREEN}2.${PLAIN} 执行 zram 管理"
+            echo -e "${YELLOW}0.${PLAIN} 返回"
+            read -p "请输入选项 [0-2]: " choose
+            case $choose in
+                1) run_script "swap.sh" ;;
+                2) run_script "zram.sh" ;;
+                *) ;;
+            esac
+            ;;
+        *)
+            echo -e "推荐方案: ${GREEN}当前环境优先使用 swap${PLAIN}"
+            echo -e "建议参数: ${GREEN}swap=1024M~4096M（按磁盘空间调整）${PLAIN}"
+            echo -e "${GREEN}1.${PLAIN} 执行 swap 管理"
+            echo -e "${GREEN}2.${PLAIN} 尝试 zram 管理"
+            echo -e "${YELLOW}0.${PLAIN} 返回"
+            read -p "请输入选项 [0-2]: " choose
+            case $choose in
+                1) run_script "swap.sh" ;;
+                2) run_script "zram.sh" ;;
+                *) ;;
+            esac
+            ;;
+    esac
+}
+
 # ==================================================
 # 分组子菜单
 # ==================================================
@@ -330,15 +556,17 @@ system_menu() {
         echo -e "${GREEN}1.${PLAIN} swap管理 (swap.sh)"
         echo -e "${GREEN}2.${PLAIN} zram管理 (zram.sh)"
         echo -e "${GREEN}3.${PLAIN} Zsh一键安装 (zsh.sh)"
+        echo -e "${GREEN}4.${PLAIN} Swap/ZRAM 推荐模式 (自动检测)"
         echo -e "${BLUE}================================================${PLAIN}"
         echo -e "${YELLOW}0.${PLAIN} 返回主菜单"
         echo ""
-        read -p "请输入选项 [0-3]: " sub_choice
+        read -p "请输入选项 [0-4]: " sub_choice
 
         case $sub_choice in
             1) run_script "swap.sh" ;;
             2) run_script "zram.sh" ;;
             3) run_script "zsh.sh" ;;
+            4) recommended_memory_mode ;;
             0) return ;;
             *) echo -e "${RED}无效输入${PLAIN}"; sleep 1 ;;
         esac
@@ -437,6 +665,7 @@ search_menu() {
 
         local items=(
             "swap管理|swap.sh|run_script:swap.sh"
+            "推荐模式|swap-zram|func:recommended_memory_mode"
             "修改SSH端口及密码|change_ssh.sh|run_script:change_ssh.sh"
             "Nginx管理|nginx.sh|run_script:nginx.sh"
             "frps管理|frps.sh|run_script:frps.sh"
@@ -524,7 +753,7 @@ main_menu() {
     while true; do
         clear
         echo -e "${BLUE}================================================${PLAIN}"
-        echo -e "${BLUE}    SSH Tool 综合管理脚本 (仓库: ${GITHUB_USER}) ${PLAIN}"
+        echo -e "${BLUE} SSH Tool 综合管理脚本 (远程优先+本地缓存回退) ${PLAIN}"
         echo -e "${BLUE}================================================${PLAIN}"
         echo -e "${GREEN}1.${PLAIN} 系统基础"
         echo -e "${GREEN}2.${PLAIN} SSH/网络与安全"
@@ -532,10 +761,11 @@ main_menu() {
         echo -e "${GREEN}4.${PLAIN} 性能测评"
         echo -e "${GREEN}5.${PLAIN} 一键搜索脚本"
         echo -e "${GREEN}6.${PLAIN} GitHub 代理设置"
+        echo -e "${GREEN}7.${PLAIN} 删除 ssh-tools"
         echo -e "${BLUE}================================================${PLAIN}"
         echo -e "${YELLOW}0.${PLAIN} 退出脚本"
         echo ""
-        read -p "请输入选项 [0-6]: " choice
+        read -p "请输入选项 [0-7]: " choice
 
         case $choice in
             1) system_menu ;;
@@ -544,6 +774,7 @@ main_menu() {
             4) benchmark_menu ;;
             5) search_menu ;;
             6) configure_github_proxy ;;
+            7) remove_shortcut_command ;;
             0) echo "退出。"; exit 0 ;;
             *) echo -e "${RED}无效输入，请重新选择。${PLAIN}"; sleep 1 ;;
         esac
@@ -554,5 +785,6 @@ main_menu() {
 # 脚本入口
 # ==================================================
 check_dependencies
+load_config
 ensure_shortcut_command
 main_menu
