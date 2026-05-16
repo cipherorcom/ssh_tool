@@ -25,6 +25,38 @@ CONFIG_DIR_DEFAULT="/etc/default"
 ZRAM_CONF_SYSTEMD="${CONFIG_DIR_SYSTEMD}/zram-generator.conf"
 ZRAM_CONF_DEFAULT="${CONFIG_DIR_DEFAULT}/zramswap"
 
+cleanup_zram_configs() {
+  rm -f "$ZRAM_CONF_SYSTEMD" "$ZRAM_CONF_DEFAULT"
+}
+
+print_service_error() {
+  local svc="$1"
+  echo ""
+  echo "❌ ${svc} 启动失败，关键错误信息如下："
+  systemctl status "$svc" --no-pager -l || true
+  echo ""
+  journalctl -xeu "$svc" --no-pager | tail -n 30 || true
+}
+
+ensure_zram_device() {
+  if [ -e /dev/zram0 ]; then
+    return 0
+  fi
+
+  if command -v modprobe >/dev/null 2>&1; then
+    modprobe zram num_devices=1 2>/dev/null || modprobe zram 2>/dev/null || true
+  fi
+
+  if [ ! -e /dev/zram0 ] && [ -d /sys/class/zram-control ] && [ -f /sys/class/zram-control/hot_add ]; then
+    add_idx=$(cat /sys/class/zram-control/hot_add 2>/dev/null || true)
+    if [ -n "$add_idx" ] && [ -e "/dev/zram${add_idx}" ] && [ "$add_idx" != "0" ]; then
+      echo "⚠️ 检测到系统创建的是 /dev/zram${add_idx}，但 zramswap 依赖 /dev/zram0"
+    fi
+  fi
+
+  [ -e /dev/zram0 ]
+}
+
 pause() {
   echo
   read -rp "🔹 按 Enter 返回主菜单..." _
@@ -97,6 +129,7 @@ enable_zram() {
 
   if [ "$USE_GENERATOR" = true ]; then
     echo "⚙️ 使用 zram-generator 启动..."
+    rm -f "$ZRAM_CONF_DEFAULT"
     cat > "$ZRAM_CONF_SYSTEMD" <<EOF
 [zram0]
 zram-size = ram/${percent}%
@@ -105,10 +138,22 @@ swap-priority = 100
 EOF
     systemctl daemon-reexec
     systemctl daemon-reload
-    systemctl restart systemd-zram-setup@zram0.service || echo "⚠️ 启动失败，请确认 systemd-zram-setup@ 服务存在"
+    if ! systemctl restart systemd-zram-setup@zram0.service; then
+      cleanup_zram_configs
+      print_service_error "systemd-zram-setup@zram0.service"
+      [ "$NON_INTERACTIVE" = "1" ] || pause
+      return 1
+    fi
     systemctl enable systemd-zram-setup@zram0.service
   elif [ "$USE_ZRAMSWAP" = true ]; then
     echo "⚙️ 使用 zramswap.service 启动..."
+    if ! ensure_zram_device; then
+      echo "❌ 未能准备 /dev/zram0，zramswap 无法启动。"
+      echo "建议：改用 zram-generator 或直接使用 swap。"
+      [ "$NON_INTERACTIVE" = "1" ] || pause
+      return 1
+    fi
+    rm -f "$ZRAM_CONF_SYSTEMD"
     cat > "$ZRAM_CONF_DEFAULT" <<EOF
 ALGO=zstd
 PERCENT=${percent}
@@ -116,7 +161,12 @@ PRIORITY=100
 EOF
     systemctl daemon-reload
     systemctl enable zramswap.service
-    systemctl restart zramswap.service
+    if ! systemctl restart zramswap.service; then
+      cleanup_zram_configs
+      print_service_error "zramswap.service"
+      [ "$NON_INTERACTIVE" = "1" ] || pause
+      return 1
+    fi
   else
     echo "❌ 无可用 ZRAM 机制，请手动安装 zram-generator 或 zram-tools"
     [ "$NON_INTERACTIVE" = "1" ] || pause

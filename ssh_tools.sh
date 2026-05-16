@@ -580,10 +580,13 @@ recommended_memory_mode() {
 
     if [[ "$action" == "zram" ]]; then
         echo -e "${GREEN}正在自动执行 zram 配置...${PLAIN}"
-        AUTO_ZRAM_PERCENT="$zram_percent" run_script "zram.sh"
-        if [[ $use_swap_after_zram -eq 1 && -n "$swap_mb" ]]; then
-            echo -e "${GREEN}正在自动执行 swap 配置...${PLAIN}"
-            AUTO_SWAP_SIZE_MB="$swap_mb" run_script "swap.sh"
+        if AUTO_ZRAM_PERCENT="$zram_percent" run_script "zram.sh"; then
+            if [[ $use_swap_after_zram -eq 1 && -n "$swap_mb" ]]; then
+                echo -e "${GREEN}正在自动执行 swap 配置...${PLAIN}"
+                AUTO_SWAP_SIZE_MB="$swap_mb" run_script "swap.sh"
+            fi
+        else
+            echo -e "${RED}zram 自动执行失败，已停止后续自动操作。${PLAIN}"
         fi
     elif [[ "$action" == "swap" ]]; then
         echo -e "${GREEN}正在自动执行 swap 配置...${PLAIN}"
