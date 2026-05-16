@@ -72,6 +72,11 @@ run_script() {
     local cache_dir
     local cache_file
     local downloaded=0
+    local non_interactive=0
+
+    if [[ -n "$AUTO_ZRAM_PERCENT" || -n "$AUTO_SWAP_SIZE_MB" ]]; then
+        non_interactive=1
+    fi
 
     if [[ $EUID -eq 0 ]]; then
         cache_dir="$GLOBAL_CACHE_DIR"
@@ -87,8 +92,11 @@ run_script() {
     download_url="$(build_raw_url "$script_name")"
     if wget -O "$cache_file" "$download_url"; then
         downloaded=1
+        echo -e "${GREEN}已从远程获取最新脚本。${PLAIN}"
     elif [[ -f "$cache_file" ]]; then
         echo -e "${YELLOW}远程获取失败，使用本地缓存: ${cache_file}${PLAIN}"
+    else
+        echo -e "${RED}远程获取失败，且本地无缓存。${PLAIN}"
     fi
 
     if [[ -f "$cache_file" ]]; then
@@ -107,7 +115,9 @@ run_script() {
     
     # 执行完暂停
     echo ""
-    read -n 1 -s -r -p "按任意键继续..."
+    if [[ $non_interactive -eq 0 ]]; then
+        read -n 1 -s -r -p "按任意键继续..."
+    fi
 }
 
 build_raw_url() {
