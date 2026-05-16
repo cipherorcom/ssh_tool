@@ -82,26 +82,22 @@ run_script() {
 
     echo -e "${GREEN}正在从仓库获取 ${script_name} ...${PLAIN}"
 
+    mkdir -p "$cache_dir"
+
     download_url="$(build_raw_url "$script_name")"
-    if wget -O "$script_name" "$download_url"; then
+    if wget -O "$cache_file" "$download_url"; then
         downloaded=1
-        mkdir -p "$cache_dir"
-        cp -f "$script_name" "$cache_file" 2>/dev/null || true
     elif [[ -f "$cache_file" ]]; then
         echo -e "${YELLOW}远程获取失败，使用本地缓存: ${cache_file}${PLAIN}"
-        cp -f "$cache_file" "$script_name"
     fi
 
-    if [[ -f "$script_name" ]]; then
-        echo -e "${GREEN}下载成功，正在执行...${PLAIN}"
+    if [[ -f "$cache_file" ]]; then
+        echo -e "${GREEN}准备执行脚本...${PLAIN}"
         if [[ $downloaded -eq 1 ]]; then
             echo -e "${GREEN}已更新本地缓存。${PLAIN}"
         fi
-        chmod +x "$script_name"
-        ./"$script_name"
-        
-        # 执行完后清理
-        rm -f "$script_name"
+        chmod +x "$cache_file"
+        bash "$cache_file"
     else
         echo -e "${RED}下载失败！请检查以下几点：${PLAIN}"
         echo "1. 仓库地址: https://github.com/${GITHUB_USER}/${REPO_NAME}"
@@ -448,6 +444,13 @@ run_nodequality_benchmark() {
 recommended_memory_mode() {
     clear
     local mem_kb mem_gb virt_type zram_supported rec_plan
+    local recommended_zram_percent=""
+    local recommended_swap_mb=""
+    local plan_desc=""
+    local zram_percent=""
+    local swap_mb=""
+    local action=""
+    local use_swap_after_zram=0
 
     mem_kb=$(awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null)
     if [[ -z "$mem_kb" || ! "$mem_kb" =~ ^[0-9]+$ ]]; then
@@ -489,58 +492,102 @@ recommended_memory_mode() {
 
     case "$rec_plan" in
         zram_plus_swap)
-            echo -e "推荐方案: ${GREEN}先启用 zram，再配置少量 swap（1-2GB）兜底${PLAIN}"
-            echo -e "建议参数: ${GREEN}zram=内存的 40%~50%，swap=1024M~2048M${PLAIN}"
-            echo -e "${GREEN}1.${PLAIN} 先执行 zram 管理"
-            echo -e "${GREEN}2.${PLAIN} 再执行 swap 管理"
-            echo -e "${YELLOW}0.${PLAIN} 返回"
-            read -p "请输入选项 [0-2]: " choose
-            case $choose in
-                1) run_script "zram.sh" ;;
-                2) run_script "swap.sh" ;;
-                *) ;;
-            esac
+            plan_desc="小内存：zram + 小容量 swap 兜底"
+            recommended_zram_percent="50"
+            recommended_swap_mb="2048"
+            action="zram"
+            use_swap_after_zram=1
             ;;
         zram)
-            echo -e "推荐方案: ${GREEN}优先使用 zram（性能更好）${PLAIN}"
-            echo -e "建议参数: ${GREEN}zram=内存的 25%~50%（常用 40%）${PLAIN}"
-            echo -e "${GREEN}1.${PLAIN} 执行 zram 管理"
-            echo -e "${GREEN}2.${PLAIN} 改为执行 swap 管理"
-            echo -e "${YELLOW}0.${PLAIN} 返回"
-            read -p "请输入选项 [0-2]: " choose
-            case $choose in
-                1) run_script "zram.sh" ;;
-                2) run_script "swap.sh" ;;
-                *) ;;
-            esac
+            plan_desc="中等内存：优先 zram"
+            recommended_zram_percent="40"
+            action="zram"
             ;;
         small_swap_or_none)
-            echo -e "推荐方案: ${GREEN}大内存机器，按需配置少量 swap 或不配置${PLAIN}"
-            echo -e "建议参数: ${GREEN}swap=1024M~2048M（若业务稳定可不配置）${PLAIN}"
-            echo -e "${GREEN}1.${PLAIN} 执行 swap 管理"
-            echo -e "${GREEN}2.${PLAIN} 执行 zram 管理"
-            echo -e "${YELLOW}0.${PLAIN} 返回"
-            read -p "请输入选项 [0-2]: " choose
-            case $choose in
-                1) run_script "swap.sh" ;;
-                2) run_script "zram.sh" ;;
-                *) ;;
-            esac
+            plan_desc="大内存：按需少量 swap 或不配置"
+            recommended_swap_mb="1024"
+            action="swap"
             ;;
         *)
-            echo -e "推荐方案: ${GREEN}当前环境优先使用 swap${PLAIN}"
-            echo -e "建议参数: ${GREEN}swap=1024M~4096M（按磁盘空间调整）${PLAIN}"
-            echo -e "${GREEN}1.${PLAIN} 执行 swap 管理"
-            echo -e "${GREEN}2.${PLAIN} 尝试 zram 管理"
-            echo -e "${YELLOW}0.${PLAIN} 返回"
-            read -p "请输入选项 [0-2]: " choose
-            case $choose in
-                1) run_script "swap.sh" ;;
-                2) run_script "zram.sh" ;;
-                *) ;;
-            esac
+            plan_desc="当前环境：优先 swap"
+            recommended_swap_mb="2048"
+            action="swap"
             ;;
     esac
+
+    echo -e "推荐方案: ${GREEN}${plan_desc}${PLAIN}"
+    if [[ -n "$recommended_zram_percent" ]]; then
+        echo -e "推荐参数: ${GREEN}zram=${recommended_zram_percent}%${PLAIN}"
+    fi
+    if [[ -n "$recommended_swap_mb" ]]; then
+        echo -e "推荐参数: ${GREEN}swap=${recommended_swap_mb}M${PLAIN}"
+    fi
+    if [[ $use_swap_after_zram -eq 1 ]]; then
+        echo -e "执行顺序: ${GREEN}先 zram 后 swap${PLAIN}"
+    fi
+    echo ""
+    echo -e "${GREEN}1.${PLAIN} 使用推荐值并自动执行"
+    echo -e "${GREEN}2.${PLAIN} 修改参数后自动执行"
+    echo -e "${YELLOW}0.${PLAIN} 返回"
+    read -p "请输入选项 [0-2]: " choose
+
+    case "$choose" in
+        0)
+            return
+            ;;
+        2)
+            if [[ -n "$recommended_zram_percent" ]]; then
+                read -rp "请输入 zram 百分比 [当前: ${recommended_zram_percent}]: " zram_percent
+                zram_percent=${zram_percent:-$recommended_zram_percent}
+                zram_percent=${zram_percent%%%}
+                if ! [[ "$zram_percent" =~ ^[0-9]+$ ]] || [ "$zram_percent" -lt 1 ] || [ "$zram_percent" -gt 100 ]; then
+                    echo -e "${RED}zram 百分比无效，已取消。${PLAIN}"
+                    read -n 1 -s -r -p "按任意键返回..."
+                    return
+                fi
+            fi
+            if [[ -n "$recommended_swap_mb" ]]; then
+                read -rp "请输入 swap 大小(MB) [当前: ${recommended_swap_mb}]: " swap_mb
+                swap_mb=${swap_mb:-$recommended_swap_mb}
+                if ! [[ "$swap_mb" =~ ^[0-9]+$ ]] || [ "$swap_mb" -lt 128 ]; then
+                    echo -e "${RED}swap 大小无效，已取消。${PLAIN}"
+                    read -n 1 -s -r -p "按任意键返回..."
+                    return
+                fi
+            fi
+            ;;
+        1)
+            ;;
+        *)
+            echo -e "${RED}无效输入${PLAIN}"
+            sleep 1
+            return
+            ;;
+    esac
+
+    zram_percent=${zram_percent:-$recommended_zram_percent}
+    swap_mb=${swap_mb:-$recommended_swap_mb}
+
+    if [[ "$action" == "zram" ]]; then
+        echo -e "${GREEN}正在自动执行 zram 配置...${PLAIN}"
+        AUTO_ZRAM_PERCENT="$zram_percent" run_script "zram.sh"
+        if [[ $use_swap_after_zram -eq 1 && -n "$swap_mb" ]]; then
+            echo -e "${GREEN}正在自动执行 swap 配置...${PLAIN}"
+            AUTO_SWAP_SIZE_MB="$swap_mb" run_script "swap.sh"
+        fi
+    elif [[ "$action" == "swap" ]]; then
+        echo -e "${GREEN}正在自动执行 swap 配置...${PLAIN}"
+        AUTO_SWAP_SIZE_MB="$swap_mb" run_script "swap.sh"
+    fi
+
+    echo ""
+    echo -e "${BLUE}------ 执行结果（当前状态） ------${PLAIN}"
+    swapon --show 2>/dev/null || true
+    if command -v zramctl >/dev/null 2>&1; then
+        zramctl 2>/dev/null || true
+    fi
+    echo -e "${BLUE}-----------------------------------${PLAIN}"
+    read -n 1 -s -r -p "按任意键返回..."
 }
 
 # ==================================================

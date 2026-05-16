@@ -53,14 +53,17 @@ menu() {
 }
 
 enable_zram() {
+  local percent="$1"
   clear
-  read -rp "请输入压缩 swap 占用物理内存百分比 (建议 25~50)： " percent
+  if [ -z "$percent" ]; then
+    read -rp "请输入压缩 swap 占用物理内存百分比 (建议 25~50)： " percent
+  fi
   percent=${percent:-50}
 
   percent=${percent%%%}
   if ! [[ "$percent" =~ ^[0-9]+$ ]] || [ "$percent" -lt 1 ] || [ "$percent" -gt 100 ]; then
     echo "❌ 百分比输入无效，请输入 1-100 的整数（例如 40）"
-    pause
+    [ "$NON_INTERACTIVE" = "1" ] || pause
     return
   fi
 
@@ -116,14 +119,38 @@ EOF
     systemctl restart zramswap.service
   else
     echo "❌ 无可用 ZRAM 机制，请手动安装 zram-generator 或 zram-tools"
-    pause
+    [ "$NON_INTERACTIVE" = "1" ] || pause
     return
   fi
 
   echo "✅ 已启用 ZRAM 压缩交换区"
   echo
-  show_status
-  pause
+  if [ "$NON_INTERACTIVE" = "1" ]; then
+    show_status_no_pause
+  else
+    show_status
+    pause
+  fi
+}
+
+show_status_no_pause() {
+  clear
+  echo "=== 当前 Swap 状态 ==="
+  swapon --show || echo "暂无 swap 启用"
+  echo
+  echo "=== ZRAM 设备信息 ==="
+  zramctl || echo "未检测到 ZRAM 设备"
+  echo
+
+  if [ -f "$ZRAM_CONF_SYSTEMD" ]; then
+    echo "=== zram-generator 配置 ==="
+    cat "$ZRAM_CONF_SYSTEMD"
+  elif [ -f "$ZRAM_CONF_DEFAULT" ]; then
+    echo "=== zramswap 配置 ==="
+    cat "$ZRAM_CONF_DEFAULT"
+  else
+    echo "未找到任何配置文件"
+  fi
 }
 
 show_status() {
@@ -184,7 +211,14 @@ disable_zram() {
   rm -f "$ZRAM_CONF_DEFAULT"
 
   echo "✅ 已关闭并删除配置"
-  pause
+  [ "$NON_INTERACTIVE" = "1" ] || pause
 }
+
+NON_INTERACTIVE=0
+if [ -n "$AUTO_ZRAM_PERCENT" ]; then
+  NON_INTERACTIVE=1
+  enable_zram "$AUTO_ZRAM_PERCENT"
+  exit $?
+fi
 
 menu
