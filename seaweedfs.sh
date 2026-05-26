@@ -37,11 +37,13 @@ choose_bind_ip() {
   local choice
   local custom_ip
 
-  echo "请选择监听 IP："
-  echo "  1) 0.0.0.0      监听所有网卡，适合内网/容器/需要外部访问"
-  echo "  2) 127.0.0.1    仅本机访问，适合前面有 Nginx/Caddy 反代"
-  echo "  3) 自己输入     例如内网 IP: 192.168.1.10"
-  echo
+  {
+    echo "请选择监听 IP："
+    echo "  1) 0.0.0.0      监听所有网卡，适合内网/容器/需要外部访问"
+    echo "  2) 127.0.0.1    仅本机访问，适合前面有 Nginx/Caddy 反代"
+    echo "  3) 自己输入     例如内网 IP: 192.168.1.10"
+    echo
+  } >&2
 
   while true; do
     read -r -p "请输入选项 [1/2/3，默认 1]: " choice
@@ -61,7 +63,7 @@ choose_bind_ip() {
           read -r -p "请输入自定义监听 IP: " custom_ip
 
           if [ -z "$custom_ip" ]; then
-            echo "IP 不能为空。"
+            echo "IP 不能为空。" >&2
             continue
           fi
 
@@ -70,11 +72,11 @@ choose_bind_ip() {
             return 0
           fi
 
-          echo "IP 格式看起来不正确，请输入类似 192.168.1.10 的 IPv4 地址。"
+          echo "IP 格式看起来不正确，请输入类似 192.168.1.10 的 IPv4 地址。" >&2
         done
         ;;
       *)
-        echo "无效选项，请输入 1、2 或 3。"
+        echo "无效选项，请输入 1、2 或 3。" >&2
         ;;
     esac
   done
