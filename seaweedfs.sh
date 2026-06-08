@@ -18,6 +18,9 @@ DEFAULT_S3_PORT="8333"
 DEFAULT_WEBDAV_PORT="7333"
 DEFAULT_VOLUME_MAX="30"
 
+DOWNLOAD_MODE="online"
+LOCAL_WEED_PACKAGE=""
+
 need_root() {
   if [ "$(id -u)" -ne 0 ]; then
     echo "请用 root 运行，或使用: sudo bash $0"
@@ -80,6 +83,70 @@ choose_bind_ip() {
         ;;
     esac
   done
+}
+
+choose_download_mode() {
+  local choice
+
+  {
+    echo "请选择 SeaweedFS 安装来源："
+    echo "  1) 在线下载（默认）"
+    echo "  2) 本地文件安装（你先手动上传 tar.gz 或 weed 二进制）"
+    echo
+  } >&2
+
+  while true; do
+    read -r -p "请输入选项 [1/2，默认 1]: " choice
+    choice="${choice:-1}"
+
+    case "$choice" in
+      1)
+        echo "online"
+        return 0
+        ;;
+      2)
+        echo "local"
+        return 0
+        ;;
+      *)
+        echo "无效选项，请输入 1 或 2。" >&2
+        ;;
+    esac
+  done
+}
+
+install_weed_from_local() {
+  local src="$1"
+  local tmpdir
+
+  if [ ! -f "$src" ]; then
+    echo "错误: 本地文件不存在: $src"
+    exit 1
+  fi
+
+  tmpdir="$(mktemp -d)"
+
+  case "$src" in
+    *.tar.gz|*.tgz)
+      echo "检测到压缩包，正在解压: $src"
+      tar -xzf "$src" -C "$tmpdir"
+
+      if [ ! -f "${tmpdir}/weed" ]; then
+        echo "错误: 压缩包中未找到 weed 二进制。"
+        rm -rf "$tmpdir"
+        exit 1
+      fi
+
+      install -m 0755 "${tmpdir}/weed" "${INSTALL_DIR}/weed"
+      ;;
+    *)
+      echo "检测到二进制文件，直接安装: $src"
+      install -m 0755 "$src" "${INSTALL_DIR}/weed"
+      ;;
+  esac
+
+  rm -rf "$tmpdir"
+  echo "已安装: $(${INSTALL_DIR}/weed version || true)"
 }
 
 check_port_number() {
@@ -358,8 +425,23 @@ enable_and_start() {
 }
 
 smoke_test() {
+  local retries=20
+  local wait_seconds=1
+  local i
+
   echo
   echo "执行基础连通性检查..."
+
+  echo "等待服务就绪（最多 ${retries}s）..."
+  for i in $(seq 1 "$retries"); do
+    if curl -fsS "http://127.0.0.1:${MASTER_PORT}/dir/status" >/dev/null 2>&1 \
+      && curl -fsS "http://127.0.0.1:${FILER_PORT}/" >/dev/null 2>&1 \
+      && curl -fsS "http://127.0.0.1:${WEBDAV_PORT}/" >/dev/null 2>&1 \
+      && bash -c ":</dev/tcp/127.0.0.1/${S3_PORT}" >/dev/null 2>&1; then
+      break
+    fi
+    sleep "$wait_seconds"
+  done
 
   set +e
 
@@ -384,6 +466,16 @@ smoke_test() {
 }
 
 print_summary() {
+  local access_host
+
+  if [ "$BIND_IP" = "127.0.0.1" ]; then
+    access_host="127.0.0.1（仅本机）"
+  elif [ "$BIND_IP" = "0.0.0.0" ]; then
+    access_host="<server-ip>"
+  else
+    access_host="$BIND_IP"
+  fi
+
   echo
   echo "安装完成。"
   echo
@@ -392,10 +484,10 @@ print_summary() {
 
   echo
   echo "访问地址："
-  echo "  Master:  http://<server-ip>:${MASTER_PORT}"
-  echo "  HTTP:    http://<server-ip>:${FILER_PORT}"
-  echo "  S3:      http://<server-ip>:${S3_PORT}"
-  echo "  WebDAV:  http://<server-ip>:${WEBDAV_PORT}"
+  echo "  Master:  http://${access_host}:${MASTER_PORT}"
+  echo "  HTTP:    http://${access_host}:${FILER_PORT}"
+  echo "  S3:      http://${access_host}:${S3_PORT}"
+  echo "  WebDAV:  http://${access_host}:${WEBDAV_PORT}"
   echo
   echo "S3 凭据："
   echo "  AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY}"
@@ -429,6 +521,11 @@ main() {
   echo "SeaweedFS 单机安装脚本"
   echo "将安装 Master + Volume + Filer HTTP + S3 + WebDAV"
   echo
+
+  DOWNLOAD_MODE="$(choose_download_mode)"
+  if [ "$DOWNLOAD_MODE" = "local" ]; then
+    LOCAL_WEED_PACKAGE="$(ask "本地安装包路径（tar.gz 或 weed 二进制）" "/root/seaweedfs.tar.gz")"
+  fi
 
   BIND_IP="$(choose_bind_ip)"
   MASTER_PORT="$(ask "Master 端口" "$DEFAULT_MASTER_PORT")"
@@ -476,7 +573,11 @@ main() {
       ;;
   esac
 
-  download_weed
+  if [ "$DOWNLOAD_MODE" = "local" ]; then
+    install_weed_from_local "$LOCAL_WEED_PACKAGE"
+  else
+    download_weed
+  fi
   create_user_and_dirs
   write_s3_config "$S3_ACCESS_KEY" "$S3_SECRET_KEY"
   write_env
