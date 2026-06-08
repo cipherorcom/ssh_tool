@@ -671,10 +671,11 @@ service_menu() {
         echo -e "${GREEN}4.${PLAIN} Sing-box四合一 (sb.sh)"
         echo -e "${GREEN}5.${PLAIN} Docker 管理 (安装/配置加速)"
         echo -e "${GREEN}6.${PLAIN} 安装宝塔 (Ubuntu/Debian)"
+        echo -e "${GREEN}7.${PLAIN} SeaweedFS 管理 (seaweedfs.sh)"
         echo -e "${BLUE}================================================${PLAIN}"
         echo -e "${YELLOW}0.${PLAIN} 返回主菜单"
         echo ""
-        read -p "请输入选项 [0-6]: " sub_choice
+        read -p "请输入选项 [0-7]: " sub_choice
 
         case $sub_choice in
             1) run_script "nginx.sh" ;;
@@ -683,6 +684,7 @@ service_menu() {
             4) run_script "sb.sh" ;;
             5) docker_menu ;;
             6) install_bt_panel ;;
+            7) run_script "seaweedfs.sh" ;;
             0) return ;;
             *) echo -e "${RED}无效输入${PLAIN}"; sleep 1 ;;
         esac
@@ -738,6 +740,7 @@ search_menu() {
             "UFW管理|ufw.sh|run_script:ufw.sh"
             "Fail2ban管理|fail2ban.sh|run_script:fail2ban.sh"
             "安装宝塔|bt_panel|func:install_bt_panel"
+            "SeaweedFS管理|seaweedfs.sh|run_script:seaweedfs.sh"
             "融合怪测评|ecs.sh|func:run_ecs_benchmark"
             "NodeQuality测评|NodeQuality|func:run_nodequality_benchmark"
             "BBR调优|bbr.sh|run_script:bbr.sh"
