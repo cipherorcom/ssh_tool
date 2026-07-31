@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>日历仙人 | 服务器工具箱</title>
+  <meta name="description" content="科技风的一站式服务器工具箱：一条命令启动，覆盖 Swap/ZRAM、SSH 安全、Nginx、FRP、Docker 与网络调优。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #070b14;
+      --bg2: #0b1324;
+      --surface: rgba(12, 20, 38, 0.76);
+      --line: rgba(95, 146, 255, 0.28);
+      --line-strong: rgba(82, 238, 229, 0.52);
+      --text: #e8f3ff;
+      --muted: #9bb3d4;
+      --cyan: #52eee5;
+      --blue: #5f92ff;
+      --green: #44d17a;
+      --shadow: 0 22px 48px rgba(5, 12, 24, 0.7);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      color: var(--text);
+      font-family: "Manrope", "PingFang SC", sans-serif;
+      background:
+        radial-gradient(1200px 700px at 88% -10%, rgba(95, 146, 255, 0.22), transparent 52%),
+        radial-gradient(900px 520px at -12% 8%, rgba(82, 238, 229, 0.18), transparent 56%),
+        linear-gradient(170deg, #060a12, #0a1120 55%, #070c16);
+      overflow-x: hidden;
+    }
+
+    .scanlines,
+    .grid {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .grid {
+      background-image:
+        linear-gradient(rgba(99, 155, 255, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99, 155, 255, 0.08) 1px, transparent 1px);
+      background-size: 40px 40px;
+      mask-image: radial-gradient(circle at center, black 40%, transparent 86%);
+      opacity: .45;
+    }
+
+    .scanlines {
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.015),
+        rgba(255, 255, 255, 0.015) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+      opacity: .32;
+    }
+
+    .wrap {
+      width: min(1120px, 92vw);
+      margin: 0 auto;
+      padding: 34px 0 28px;
+      position: relative;
+      z-index: 1;
+      animation: boot 720ms cubic-bezier(.2,.86,.2,1);
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      color: #86a0c6;
+      font-size: 12px;
+      letter-spacing: .5px;
+    }
+
+    .brand {
+      font-family: "Orbitron", sans-serif;
+      font-size: 15px;
+      color: #d9ecff;
+      text-transform: uppercase;
+    }
+
+    .badge-live {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid rgba(82, 238, 229, 0.4);
+      background: rgba(82, 238, 229, 0.1);
+      border-radius: 999px;
+      padding: 5px 10px;
+      color: #9ff7ef;
+      font-size: 11px;
+    }
+
+    .badge-live::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #50f2c8;
+      box-shadow: 0 0 12px #50f2c8;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 18px;
+      margin-bottom: 14px;
+    }
+
+    .panel {
+      background: linear-gradient(165deg, rgba(12, 20, 38, 0.84), rgba(10, 16, 30, 0.68));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .panel::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .hero-main {
+      padding: 30px;
+    }
+
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid rgba(95, 146, 255, .5);
+      background: rgba(95, 146, 255, .12);
+      color: #b8ccff;
+      border-radius: 999px;
+      padding: 7px 11px;
+      font-size: 12px;
+      margin-bottom: 14px;
+    }
+
+    h1 {
+      font-family: "Orbitron", "Manrope", sans-serif;
+      font-size: clamp(34px, 5.4vw, 56px);
+      line-height: 1.03;
+      letter-spacing: .6px;
+      margin-bottom: 12px;
+      text-shadow: 0 0 20px rgba(95, 146, 255, 0.34);
+    }
+
+    .lead {
+      color: var(--muted);
+      line-height: 1.7;
+      max-width: 43ch;
+      margin-bottom: 16px;
+      font-size: 15px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      border: 1px solid rgba(130, 166, 230, 0.4);
+      color: #c6daf8;
+      background: rgba(9, 15, 28, 0.6);
+      border-radius: 10px;
+      font-size: 12px;
+      padding: 7px 10px;
+    }
+
+    .terminal {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 314px;
+    }
+
+    .terminal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      color: #8ea7cc;
+      font-size: 12px;
+    }
+
+    .dots { display: flex; gap: 6px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot.r { background: #ff6c61; }
+    .dot.y { background: #ffc14e; }
+    .dot.g { background: #49db90; }
+
+    .cmd {
+      border: 1px solid rgba(82, 238, 229, 0.4);
+      border-radius: 12px;
+      background: rgba(5, 12, 23, 0.88);
+      padding: 12px;
+      font-size: 14px;
+      line-height: 1.6;
+      word-break: break-all;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: #def5ff;
+      box-shadow: inset 0 0 0 1px rgba(82, 238, 229, 0.08);
+    }
+    .cmd::before { content: "$ "; color: var(--cyan); }
+
+    .tip {
+      margin-top: 10px;
+      color: #91a9cd;
+      font-size: 12px;
+    }
+
+    .meta {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .meta-item {
+      border: 1px solid rgba(95, 146, 255, 0.28);
+      border-radius: 10px;
+      background: rgba(8, 14, 26, 0.72);
+      padding: 8px 9px;
+    }
+
+    .meta-item .k {
+      color: #7ea1d6;
+      font-size: 11px;
+      margin-bottom: 3px;
+    }
+
+    .meta-item .v {
+      color: #d9ebff;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .1px;
+    }
+
+    .status-line {
+      margin-top: 10px;
+      border: 1px dashed rgba(82, 238, 229, 0.36);
+      border-radius: 9px;
+      padding: 7px 9px;
+      color: #9feee8;
+      font-size: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-line b {
+      color: #d8fffb;
+      font-weight: 700;
+    }
+
+    .actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      border-radius: 11px;
+      padding: 10px 13px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .18s ease, box-shadow .2s ease, opacity .2s ease;
+    }
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+
+    .btn-main {
+      color: #031317;
+      background: linear-gradient(105deg, var(--cyan), #7af4ed);
+      box-shadow: 0 10px 22px rgba(82, 238, 229, 0.34);
+    }
+
+    .btn-sub {
+      color: #d4e6ff;
+      background: rgba(95, 146, 255, 0.16);
+      border: 1px solid rgba(95, 146, 255, .45);
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .card {
+      background: linear-gradient(160deg, rgba(11, 20, 38, 0.9), rgba(8, 15, 29, 0.75));
+      border: 1px solid rgba(95, 146, 255, 0.24);
+      border-radius: 14px;
+      padding: 14px;
+      position: relative;
+      overflow: hidden;
+      transform: translateY(14px);
+      opacity: 0;
+      animation: rise .55s ease forwards;
+    }
+    .card:nth-child(1){animation-delay:.04s}
+    .card:nth-child(2){animation-delay:.08s}
+    .card:nth-child(3){animation-delay:.12s}
+    .card:nth-child(4){animation-delay:.16s}
+    .card:nth-child(5){animation-delay:.2s}
+    .card:nth-child(6){animation-delay:.24s}
+    .card:nth-child(7){animation-delay:.28s}
+    .card:nth-child(8){animation-delay:.32s}
+
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: -40% 40% auto -20%;
+      height: 120px;
+      background: linear-gradient(120deg, rgba(82, 238, 229, .12), transparent 65%);
+      transform: rotate(8deg);
+      pointer-events: none;
+    }
+
+    .icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      background: rgba(82, 238, 229, 0.12);
+      color: #96f9f2;
+      margin-bottom: 10px;
+      border: 1px solid rgba(82, 238, 229, 0.3);
+    }
+
+    .card h3 {
+      font-size: 15px;
+      margin-bottom: 7px;
+      color: #eaf5ff;
+    }
+
+    .card p {
+      font-size: 12px;
+      line-height: 1.6;
+      color: #9db6d9;
+    }
+
+    .foot {
+      margin-top: 18px;
+      text-align: center;
+      color: #7e97bb;
+      font-size: 12px;
+    }
+
+    .toast {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      border: 1px solid rgba(82, 238, 229, .48);
+      background: rgba(7, 16, 28, 0.95);
+      color: #b9fff8;
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 12px;
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: .2s ease;
+      z-index: 5;
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    @keyframes boot {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(14px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes pulse {
+      0%,100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.2); opacity: .7; }
+    }
+
+    @media (max-width: 980px) {
+      .hero { grid-template-columns: 1fr; }
+      .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 560px) {
+      .wrap { padding-top: 22px; }
+      .hero-main { padding: 20px; }
+      .terminal { min-height: 0; }
+      .meta { grid-template-columns: 1fr; }
+      .cards { grid-template-columns: 1fr; }
+      .actions button { width: 100%; }
+      .topbar { flex-direction: column; align-items: flex-start; gap: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="grid" aria-hidden="true"></div>
+  <div class="scanlines" aria-hidden="true"></div>
+
+  <main class="wrap">
+    <div class="topbar">
+      <div class="brand">SSH_TOOLS CONSOLE</div>
+      <div class="badge-live">NODE ONLINE</div>
+    </div>
+
+    <section class="hero">
+      <article class="panel hero-main">
+        <span class="kicker"><i class="fa-solid fa-microchip"></i> OPS AUTOMATION INTERFACE</span>
+        <h1>日历仙人<br>服务器工具箱</h1>
+        <p class="lead">一条命令进入运维主控台：Swap / ZRAM、SSH 安全、Nginx、FRP、Docker、网络调优，统一入口，远程优先并支持缓存回退。</p>
+        <div class="chips">
+          <span class="chip">远程优先拉取</span>
+          <span class="chip">本地缓存回退</span>
+          <span class="chip">GitHub 代理持久化</span>
+          <span class="chip">可一键清理本地安装</span>
+        </div>
+      </article>
+
+      <article class="panel terminal" aria-label="运行命令">
+        <div>
+          <div class="terminal-head">
+            <div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+            <span>root@vps:~</span>
+          </div>
+          <div id="cmd" class="cmd">bash &lt;(curl -s https://ssh-tools.rnxr.de)</div>
+          <p class="tip">复制命令到服务器终端执行，进入交互式菜单。</p>
+          <div class="meta" aria-label="运行信息">
+            <div class="meta-item"><div class="k">下载策略</div><div class="v">远程优先 + 缓存回退</div></div>
+            <div class="meta-item"><div class="k">建议权限</div><div class="v">root / sudo</div></div>
+            <div class="meta-item"><div class="k">代理支持</div><div class="v">GitHub 代理持久化</div></div>
+            <div class="meta-item"><div class="k">运行模式</div><div class="v">交互式菜单</div></div>
+          </div>
+          <div class="status-line">
+            <span>当前入口域名：<b>ssh-tools.rnxr.de</b></span>
+            <span style="color:#7be3b4;">READY</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn-main" type="button" onclick="copyCommand()"><i class="fa-regular fa-copy"></i> 复制命令</button>
+          <button class="btn-sub" type="button" onclick="openReadme()"><i class="fa-solid fa-book-open"></i> 项目文档</button>
+        </div>
+      </article>
+    </section>
+
+    <section class="cards" aria-label="功能模块">
+      <article class="card"><div class="icon"><i class="fa-solid fa-memory"></i></div><h3>Swap / ZRAM</h3><p>交换空间与内存压缩管理，适配不同内存规模与负载需求。</p></article>
+      <article class="card"><div class="icon"><i class="fa-solid fa-user-shield"></i></div><h3>SSH 安全</h3><p>快速修改端口与密码，配合防护工具降低暴力破解风险。</p></article>
+      <article class="card"><div class="icon"><i class="fa-solid fa-server"></i></div><h3>Nginx 管理</h3><p>常见安装与反代场景统一处理，减少重复操作成本。</p></article>
+      <article class="card"><div class="icon"><i class="fa-solid fa-network-wired"></i></div><h3>FRP 穿透</h3><p>frps / frpc 安装、配置、启停和状态查看一体化。</p></article>
+      <article class="card"><div class="icon"><i class="fa-brands fa-docker"></i></div><h3>Docker</h3><p>安装与加速配置分离，容器环境部署更直接。</p></article>
+      <article class="card"><div class="icon"><i class="fa-solid fa-shield-alt"></i></div><h3>UFW / Fail2ban</h3><p>防火墙和登录防护集中入口，基础安全配置更清晰。</p></article>
+      <article class="card"><div class="icon"><i class="fa-solid fa-gauge-high"></i></div><h3>BBR 与测评</h3><p>网络调优与机器测评联动，部署后可快速自检。</p></article>
+      <article class="card"><div class="icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div><h3>Zsh 美化</h3><p>终端补全与高亮增强，提升命令行日常效率。</p></article>
+    </section>
+
+    <p class="foot">&copy; 2026 日历仙人 Tools · High Signal. Low Friction.</p>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite">已复制</div>
+
+  <script>
+    function copyCommand() {
+      var cmd = document.getElementById("cmd").textContent;
+      navigator.clipboard.writeText(cmd).then(function () {
+        var toast = document.getElementById("toast");
+        toast.textContent = "命令已复制到剪贴板";
+        toast.classList.add("show");
+        setTimeout(function () { toast.classList.remove("show"); }, 1600);
+      }).catch(function () {
+        window.alert("复制失败，请手动复制命令");
+      });
+    }
+
+    function openReadme() {
+      window.open("https://github.com/cipherorcom/ssh_tool", "_blank", "noopener");
+    }
+  </script>
+</body>
+</html>

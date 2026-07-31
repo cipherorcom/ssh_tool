@@ -43,14 +43,23 @@ add_swap() {
     fi
 
     echo "🧩 创建 ${size_mb}MB 的 Swap 文件中..."
-    fallocate -l "${size_mb}M" "$SWAP_FILE" || {
-        echo "❌ 创建失败，请检查磁盘空间。"
-        return 1
-    }
+    # 部分文件系统 (如 XFS 旧版) fallocate 创建的文件无法用于 swap，回退到 dd
+    if ! fallocate -l "${size_mb}M" "$SWAP_FILE" 2>/dev/null; then
+        echo "⚠️  fallocate 不可用，改用 dd 创建（较慢）..."
+        if ! dd if=/dev/zero of="$SWAP_FILE" bs=1M count="$size_mb" status=progress; then
+            echo "❌ 创建失败，请检查磁盘空间。"
+            rm -f "$SWAP_FILE"
+            return 1
+        fi
+    fi
 
     chmod 600 "$SWAP_FILE"
-    mkswap "$SWAP_FILE"
-    swapon "$SWAP_FILE"
+    if ! mkswap "$SWAP_FILE" || ! swapon "$SWAP_FILE"; then
+        echo "❌ 启用 Swap 失败，正在清理..."
+        swapoff "$SWAP_FILE" 2>/dev/null
+        rm -f "$SWAP_FILE"
+        return 1
+    fi
 
     if ! grep -q "$SWAP_FILE" /etc/fstab; then
         echo "$SWAP_FILE none swap sw 0 0" >> /etc/fstab

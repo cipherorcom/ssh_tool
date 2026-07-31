@@ -21,7 +21,8 @@ install_fail2ban() {
     echo -e "${YELLOW}正在检测系统并安装 Fail2ban...${NC}"
     if [ -f /etc/debian_version ]; then
         apt-get update
-        apt-get install -y fail2ban
+        # python3-systemd 用于 systemd backend（Debian 12+ 默认无 auth.log）
+        apt-get install -y fail2ban python3-systemd
     elif [ -f /etc/redhat-release ]; then
         yum install -y epel-release
         yum install -y fail2ban
@@ -29,10 +30,43 @@ install_fail2ban() {
         echo -e "${RED}不支持的操作系统，请手动安装。${NC}"
         return
     fi
-    
+
+    configure_ssh_jail
     systemctl enable fail2ban
-    systemctl start fail2ban
-    echo -e "${GREEN}Fail2ban 安装并启动完成！${NC}"
+    systemctl restart fail2ban
+    echo -e "${GREEN}Fail2ban 安装并启动完成（已启用 SSH 防护）！${NC}"
+}
+
+# 配置 SSH 防护 (jail.local)
+configure_ssh_jail() {
+    local ssh_port
+    ssh_port=$(grep -E "^Port[[:space:]]+[0-9]+" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -n 1)
+    ssh_port=${ssh_port:-22}
+
+    echo -e "${YELLOW}正在写入 /etc/fail2ban/jail.local (SSH 端口: ${ssh_port})...${NC}"
+    mkdir -p /etc/fail2ban
+    cat > /etc/fail2ban/jail.local <<EOF
+[DEFAULT]
+bantime = 1h
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled = true
+port = ${ssh_port}
+backend = systemd
+EOF
+    echo -e "${GREEN}jail.local 写入完成。${NC}"
+}
+
+# 重新生成 SSH 防护配置并重启
+reconfigure_ssh_jail() {
+    if ! command -v fail2ban-client &> /dev/null; then
+        echo -e "${RED}未检测到 Fail2ban，请先安装。${NC}"
+        return
+    fi
+    configure_ssh_jail
+    systemctl restart fail2ban && echo -e "${GREEN}已重启 Fail2ban 使配置生效。${NC}"
 }
 
 # 服务管理 (启动/停止/重启)
@@ -100,6 +134,7 @@ show_menu() {
     echo "4. 查看指定 Jail 的详细状态 (查看被封 IP)"
     echo "5. 解封 (Unban) 指定 IP"
     echo "6. 封禁 (Ban) 指定 IP"
+    echo "7. 重新生成 SSH 防护配置 (jail.local)"
     echo "0. 退出脚本"
     echo "=================================="
 }
@@ -107,7 +142,7 @@ show_menu() {
 # 运行主逻辑
 while true; do
     show_menu
-    read -p "请输入选项 [0-6]: " choice
+    read -p "请输入选项 [0-7]: " choice
     case $choice in
         1) install_fail2ban ;;
         2) manage_service ;;
@@ -115,6 +150,7 @@ while true; do
         4) check_jail_status ;;
         5) unban_ip ;;
         6) ban_ip ;;
+        7) reconfigure_ssh_jail ;;
         0) echo -e "${GREEN}退出脚本，祝你使用愉快！${NC}"; exit 0 ;;
         *) echo -e "${RED}无效选项，请重新输入。${NC}" ;;
     esac

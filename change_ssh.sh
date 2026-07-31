@@ -30,7 +30,7 @@ change_ssh_port() {
             echo -e "${RED}无效端口。请输入 1024 到 65535 之间的端口号。${NC}"; continue
         fi
         CURRENT_PORT=$(ss -tlpn | grep sshd | awk '{print $4}' | awk -F ':' '{print $NF}' | head -n 1)
-        if [ "$NEW_PORT" -eq "$CURRENT_PORT" ]; then
+        if [ -n "$CURRENT_PORT" ] && [ "$NEW_PORT" -eq "$CURRENT_PORT" ]; then
             echo -e "${RED}新端口号 (${NEW_PORT}) 与当前端口号相同，无需修改。${NC}"
             return
         fi
@@ -50,6 +50,10 @@ change_ssh_port() {
     sed -i -E "s/^[#\s]*Port\s+[0-9]+/Port ${NEW_PORT}/" "$SSHD_CONFIG"
     sed -i -E "/^#?Port\s/ s/^#?Port\s/#&/" "$SSHD_CONFIG"
     sed -i -E "s/^##?Port\s+${NEW_PORT}/Port ${NEW_PORT}/" "$SSHD_CONFIG"
+    if ! grep -q "^Port ${NEW_PORT}" "$SSHD_CONFIG"; then
+        # 配置中原本没有 Port 行（使用默认 22），直接追加
+        echo "Port ${NEW_PORT}" >> "$SSHD_CONFIG"
+    fi
     if ! grep -q "^Port ${NEW_PORT}" "$SSHD_CONFIG"; then
         echo -e "${RED}错误：修改配置文件失败。${NC}"; cp "$BACKUP_FILE" "$SSHD_CONFIG"; return;
     fi
@@ -72,14 +76,13 @@ change_ssh_port() {
     
     # 5. 重启服务
     echo -e "\n${GREEN}好的，正在重启 SSH 服务以应用新端口...${NC}"
-    systemctl restart sshd
-    # 检查重启命令本身是否成功
-    if [ $? -ne 0 ]; then
+    # Debian/Ubuntu 上服务名为 ssh，CentOS/RHEL 上为 sshd
+    if ! systemctl restart sshd 2>/dev/null && ! systemctl restart ssh 2>/dev/null; then
         echo -e "${RED}错误：SSH 服务启动失败！可能是 sshd_config 文件存在语法错误。${NC}"
         echo "请在此窗口中运行 'journalctl -xeu sshd' 查看详细错误。"
         echo "正在自动从备份恢复并再次重启..."
         cp "$BACKUP_FILE" "$SSHD_CONFIG"
-        systemctl restart sshd
+        systemctl restart sshd 2>/dev/null || systemctl restart ssh
         echo "已恢复到原始配置。"
         return
     fi

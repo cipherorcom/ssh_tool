@@ -18,6 +18,12 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
+# JSON 修改依赖 python3
+if ! command -v python3 &> /dev/null; then
+    echo -e "${RED}错误: 未检测到 python3，请先安装 (例如: apt install python3)。${PLAIN}"
+    exit 1
+fi
+
 echo -e "-----------------------------------"
 echo -e "${GREEN}   Docker 镜像加速器配置脚本   ${PLAIN}"
 echo -e "-----------------------------------"

@@ -41,6 +41,16 @@ uninstall_ufw() {
     fi
 }
 
+# 启用防火墙前先放行 SSH 端口，防止远程操作被锁在外面
+enable_ufw() {
+    local ssh_port
+    ssh_port=$(ss -tlpn 2>/dev/null | grep sshd | awk '{print $4}' | awk -F ':' '{print $NF}' | head -n 1)
+    ssh_port=${ssh_port:-22}
+    echo -e "${YELLOW}检测到 SSH 端口为 ${ssh_port}，先放行以防断连...${NC}"
+    ufw allow "${ssh_port}/tcp"
+    ufw enable
+}
+
 # 初始化安装检查
 check_install
 
@@ -56,15 +66,15 @@ show_menu() {
 
 while true; do
     show_menu
-    read choice
+    read -r choice
     case $choice in
         1) ufw status numbered ;;
-        2) ufw enable ;;
+        2) enable_ufw ;;
         3) ufw disable ;;
-        4) echo -n "端口/服务 (如 22 或 80/tcp): "; read port; ufw allow $port ;;
-        5) ufw status numbered; echo -n "规则编号: "; read num; ufw delete $num ;;
-        6) echo -n "允许的 IP: "; read ip; ufw allow from $ip ;;
-        7) echo -n "拦截的 IP: "; read ip; ufw deny from $ip ;;
+        4) echo -n "端口/服务 (如 22 或 80/tcp): "; read -r port; ufw allow "$port" ;;
+        5) ufw status numbered; echo -n "规则编号: "; read -r num; ufw delete "$num" ;;
+        6) echo -n "允许的 IP: "; read -r ip; ufw allow from "$ip" ;;
+        7) echo -n "拦截的 IP: "; read -r ip; ufw deny from "$ip" ;;
         8) ufw reset ;;
         9) uninstall_ufw ;;
         0) exit 0 ;;

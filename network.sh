@@ -29,7 +29,8 @@ check_status() {
     
     # 使用 curl 访问双栈域名
     # 设置超时时间，防止网络不通卡住
-    local ip_info=$(curl -s --connect-timeout 5 https://ip.gs)
+    local ip_info
+    ip_info=$(curl -s --connect-timeout 5 https://ip.gs)
     
     if [[ -z "$ip_info" ]]; then
         ip_info=$(curl -s --connect-timeout 5 https://api.ip.sb/ip)

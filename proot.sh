@@ -104,7 +104,7 @@ setup_distro() {
     echo "正在从以下地址下载 rootfs:"
     echo "$ROOTFS_URL"
     # 使用 curl 下载文件，-L 表示跟随重定向
-    curl -L -o "${INSTALL_DIR}.tar.xz" "$ROOTFS_URL"
+    curl -fL -o "${INSTALL_DIR}.tar.xz" "$ROOTFS_URL"
     if [ $? -ne 0 ]; then
         echo -e "${RED}下载失败，请检查网络或URL。${NC}"
         rm -f "${INSTALL_DIR}.tar.xz" # 清理失败的下载

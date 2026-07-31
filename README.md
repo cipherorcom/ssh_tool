@@ -13,12 +13,15 @@ bash <(curl -s https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads
 - swap 管理：`swap.sh`
 - zram 管理：`zram.sh`
 - zsh 一键安装：`zsh.sh`
+- PRoot 环境安装：`proot.sh`
 
 ### SSH / 网络与安全
 - 修改 SSH 端口及密码：`change_ssh.sh`
 - 出站优先级管理：`network.sh`
 - UFW 管理：`ufw.sh`
 - Fail2ban 管理：`fail2ban.sh`
+- BBR 加速与 TCP 调优：`bbr.sh`
+- WARP 管理：`warp.sh`（基于 [fscarmen/warp-sh](https://github.com/fscarmen/warp)）
 
 ### 服务与面板
 - Nginx 管理：`nginx.sh`
@@ -28,8 +31,7 @@ bash <(curl -s https://raw.githubusercontent.com/cipherorcom/ssh_tool/refs/heads
 - Docker 管理：`set_docker_mirror.sh`（配合主菜单安装 Docker）
 - 宝塔安装（由主菜单内置）
 
-### 性能优化与测评
-- BBR + TCP 调优：`bbr.sh`
+### 性能测评
 - 融合怪测评：`ecs.sh`（远程拉取）
 - NodeQuality 测评（远程拉取）
 

@@ -132,7 +132,7 @@ EOF
     
     echo "正在配置防火墙..."
     # 只开放服务端口和Dashboard端口
-    PORTS_TO_OPEN=($SERVER_PORT $DASHBOARD_PORT)
+    PORTS_TO_OPEN=("$SERVER_PORT" "$DASHBOARD_PORT")
     if command -v firewall-cmd &>/dev/null; then
         echo "检测到 firewalld, 正在开放端口: ${PORTS_TO_OPEN[*]}"
         for port in "${PORTS_TO_OPEN[@]}"; do firewall-cmd --permanent --add-port=${port}/tcp; done
@@ -251,7 +251,7 @@ do_edit_config() {
     sed -i -E "s|^webServer\.password\s*=.*$|webServer.password = \"${DASHBOARD_PWD}\"|" "$FRPS_CONFIG_PATH"
 
     echo "正在配置防火墙端口..."
-    PORTS_TO_OPEN=($SERVER_PORT $DASHBOARD_PORT)
+    PORTS_TO_OPEN=("$SERVER_PORT" "$DASHBOARD_PORT")
     if command -v firewall-cmd &>/dev/null; then
         for port in "${PORTS_TO_OPEN[@]}"; do firewall-cmd --permanent --add-port=${port}/tcp >/dev/null 2>&1; done
         firewall-cmd --reload >/dev/null 2>&1

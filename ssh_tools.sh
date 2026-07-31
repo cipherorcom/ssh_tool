@@ -65,9 +65,10 @@ check_dependencies() {
     fi
 }
 
-# 下载并执行脚本的函数
+# 下载并执行脚本的函数，script_name 之后的参数原样透传给目标脚本
 run_script() {
     local script_name=$1
+    shift
     local download_url
     local cache_dir
     local cache_file
@@ -105,7 +106,7 @@ run_script() {
             echo -e "${GREEN}已更新本地缓存。${PLAIN}"
         fi
         chmod +x "$cache_file"
-        bash "$cache_file"
+        bash "$cache_file" "$@"
     else
         echo -e "${RED}下载失败！请检查以下几点：${PLAIN}"
         echo "1. 仓库地址: https://github.com/${GITHUB_USER}/${REPO_NAME}"
@@ -617,16 +618,18 @@ system_menu() {
         echo -e "${GREEN}2.${PLAIN} zram管理 (zram.sh)"
         echo -e "${GREEN}3.${PLAIN} Zsh一键安装 (zsh.sh)"
         echo -e "${GREEN}4.${PLAIN} Swap/ZRAM 推荐模式 (自动检测)"
+        echo -e "${GREEN}5.${PLAIN} PRoot环境安装 (proot.sh)"
         echo -e "${BLUE}================================================${PLAIN}"
         echo -e "${YELLOW}0.${PLAIN} 返回主菜单"
         echo ""
-        read -p "请输入选项 [0-4]: " sub_choice
+        read -p "请输入选项 [0-5]: " sub_choice
 
         case $sub_choice in
             1) run_script "swap.sh" ;;
             2) run_script "zram.sh" ;;
             3) run_script "zsh.sh" ;;
             4) recommended_memory_mode ;;
+            5) run_script "proot.sh" ;;
             0) return ;;
             *) echo -e "${RED}无效输入${PLAIN}"; sleep 1 ;;
         esac
@@ -643,16 +646,20 @@ security_menu() {
         echo -e "${GREEN}2.${PLAIN} 出站优先级管理脚本 (network.sh)"
         echo -e "${GREEN}3.${PLAIN} UFW管理 (ufw.sh)"
         echo -e "${GREEN}4.${PLAIN} Fail2ban管理 (fail2ban.sh)"
+        echo -e "${GREEN}5.${PLAIN} BBR加速与TCP调优 (bbr.sh)"
+        echo -e "${GREEN}6.${PLAIN} WARP管理 (简化菜单)"
         echo -e "${BLUE}================================================${PLAIN}"
         echo -e "${YELLOW}0.${PLAIN} 返回主菜单"
         echo ""
-        read -p "请输入选项 [0-4]: " sub_choice
+        read -p "请输入选项 [0-6]: " sub_choice
 
         case $sub_choice in
             1) run_script "change_ssh.sh" ;;
             2) run_script "network.sh" ;;
             3) run_script "ufw.sh" ;;
             4) run_script "fail2ban.sh" ;;
+            5) run_script "bbr.sh" ;;
+            6) warp_menu ;;
             0) return ;;
             *) echo -e "${RED}无效输入${PLAIN}"; sleep 1 ;;
         esac
@@ -717,7 +724,7 @@ search_menu() {
         echo -e "${BLUE}================================================${PLAIN}"
         echo -e "${BLUE}                 一键搜索脚本                   ${PLAIN}"
         echo -e "${BLUE}================================================${PLAIN}"
-        echo "支持关键词示例: ssh / nginx / docker / 测评 / bbr"
+        echo "支持关键词示例: ssh / nginx / docker / 测评 / bbr / warp / proot"
         echo ""
         read -rp "请输入关键词（直接回车返回）: " keyword
 
@@ -741,6 +748,8 @@ search_menu() {
             "融合怪测评|ecs.sh|func:run_ecs_benchmark"
             "NodeQuality测评|NodeQuality|func:run_nodequality_benchmark"
             "BBR调优|bbr.sh|run_script:bbr.sh"
+            "WARP管理|warp.sh|func:warp_menu"
+            "PRoot环境安装|proot.sh|run_script:proot.sh"
         )
 
         local match_indexes=()
@@ -807,6 +816,90 @@ search_menu() {
 }
 
 # ==================================================
+# WARP 简化菜单（封装 fscarmen warp.sh 的常用命令）
+# ==================================================
+
+# 预设 warp.sh 语言为中文，避免首次运行时的英文语言选择提示
+warp_preset_language() {
+    if [[ $EUID -eq 0 && ! -s /etc/wireguard/language ]]; then
+        mkdir -p /etc/wireguard
+        echo "C" > /etc/wireguard/language
+    fi
+}
+
+warp_menu() {
+    while true; do
+        clear
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${BLUE}            WARP 管理（简化菜单）               ${PLAIN}"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "WARP 可为服务器添加 Cloudflare 出站网络，常用于："
+        echo -e "补全 IPv4/IPv6、解锁流媒体、获得干净出站 IP。"
+        echo -e "${BLUE}------------------ 安装 -----------------------${PLAIN}"
+        echo -e "${GREEN}1.${PLAIN} 一键双栈接管 (推荐, IPv4+IPv6 全走 WARP)"
+        echo -e "${GREEN}2.${PLAIN} 仅补 IPv4 (适合纯 IPv6 小鸡)"
+        echo -e "${GREEN}3.${PLAIN} 仅补 IPv6 (适合纯 IPv4 小鸡)"
+        echo -e "${GREEN}4.${PLAIN} Socks5 代理模式 (WireProxy, 不改全局网络)"
+        echo -e "${BLUE}------------------ 日常 -----------------------${PLAIN}"
+        echo -e "${GREEN}5.${PLAIN} 查看 WARP IP 信息"
+        echo -e "${GREEN}6.${PLAIN} 临时开/关 WARP"
+        echo -e "${GREEN}7.${PLAIN} 更换 IP (刷 Netflix 解锁)"
+        echo -e "${GREEN}8.${PLAIN} 切换出站优先级 (IPv4/IPv6/默认)"
+        echo -e "${BLUE}------------------ 其他 -----------------------${PLAIN}"
+        echo -e "${GREEN}9.${PLAIN} 卸载 WARP"
+        echo -e "${GREEN}10.${PLAIN} 进入原版完整菜单 (高级功能)"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${YELLOW}0.${PLAIN} 返回上级菜单"
+        echo ""
+        read -p "请输入选项 [0-10]: " warp_choice
+
+        [[ "$warp_choice" != "0" ]] && warp_preset_language
+
+        case $warp_choice in
+            1) run_script "warp.sh" d ;;
+            2) run_script "warp.sh" 4 ;;
+            3) run_script "warp.sh" 6 ;;
+            4) run_script "warp.sh" w ;;
+            5) run_script "warp.sh" n ;;
+            6) run_script "warp.sh" o ;;
+            7) run_script "warp.sh" i ;;
+            8) run_script "warp.sh" s ;;
+            9)
+                read -p "确定要卸载 WARP 吗? (y/N): " confirm_uninstall
+                if [[ "$confirm_uninstall" =~ ^[Yy]$ ]]; then
+                    run_script "warp.sh" u
+                fi
+                ;;
+            10) run_script "warp.sh" ;;
+            0) return ;;
+            *) echo -e "${RED}无效输入${PLAIN}"; sleep 1 ;;
+        esac
+    done
+}
+
+settings_menu() {
+    while true; do
+        clear
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${BLUE}              设置与维护菜单                    ${PLAIN}"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${GREEN}1.${PLAIN} GitHub 代理设置"
+        echo -e "${GREEN}2.${PLAIN} 删除 ssh-tools"
+        echo -e "${BLUE}================================================${PLAIN}"
+        echo -e "${YELLOW}0.${PLAIN} 返回主菜单"
+        echo ""
+        read -p "请输入选项 [0-2]: " sub_choice
+
+        case $sub_choice in
+            1) configure_github_proxy ;;
+            2) remove_shortcut_command ;;
+            0) return ;;
+            *) echo -e "${RED}无效输入${PLAIN}"; sleep 1 ;;
+        esac
+    done
+}
+
+# ==================================================
 # 主菜单
 # ==================================================
 main_menu() {
@@ -820,12 +913,11 @@ main_menu() {
         echo -e "${GREEN}3.${PLAIN} 服务与面板"
         echo -e "${GREEN}4.${PLAIN} 性能测评"
         echo -e "${GREEN}5.${PLAIN} 一键搜索脚本"
-        echo -e "${GREEN}6.${PLAIN} GitHub 代理设置"
-        echo -e "${GREEN}7.${PLAIN} 删除 ssh-tools"
+        echo -e "${GREEN}6.${PLAIN} 设置与维护"
         echo -e "${BLUE}================================================${PLAIN}"
         echo -e "${YELLOW}0.${PLAIN} 退出脚本"
         echo ""
-        read -p "请输入选项 [0-7]: " choice
+        read -p "请输入选项 [0-6]: " choice
 
         case $choice in
             1) system_menu ;;
@@ -833,8 +925,7 @@ main_menu() {
             3) service_menu ;;
             4) benchmark_menu ;;
             5) search_menu ;;
-            6) configure_github_proxy ;;
-            7) remove_shortcut_command ;;
+            6) settings_menu ;;
             0) echo "退出。"; exit 0 ;;
             *) echo -e "${RED}无效输入，请重新选择。${PLAIN}"; sleep 1 ;;
         esac
